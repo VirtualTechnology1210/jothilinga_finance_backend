@@ -11,19 +11,19 @@ require("dotenv").config({ path: path.resolve(__dirname, "", envFile) });
 
 app.use(express.json());
 
-// app.use(
-//   cors({
-//     origin: `http://localhost:3000`,
-//     credentials: true,
-//   })
-// );
-
 app.use(
   cors({
-    origin: "*",
+    origin: `http://localhost:3000`,
     credentials: true,
   })
 );
+
+// app.use(
+//   cors({
+//     origin: "*",
+//     credentials: true,
+//   })
+// );
 
 // Add body-parser middleware here
 app.use(bodyParser.json({ limit: "50mb" }));
@@ -44,7 +44,7 @@ app.get("*", function (req, res) {
   res.sendFile(path.join(__dirname, "/public/index.html"));
 });
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5001;
 const startServer = async () => {
   try {
     // Test database connection

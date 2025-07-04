@@ -155,8 +155,25 @@ const getProcessingFeeSummaryReportData = require("../controllers/getProcessingF
 const getJlgProcessingFeeSummaryReportData = require("../controllers/getJlgProcessingFeeSummaryReportData");
 const addOrEditDetails = require("../controllers/addOrEditDetails");
 const uploadBranchManagerBookingProcessDocuments = require("../controllers/uploadBranchManagerBookingProcessDocuments");
+const {getByMemberId} = require("../controllers/emi_chart_controller");
+const {createEmiChart} = require("../controllers/emi_chart_controller");
+
+
+
+//new Route
+
+
 
 const router = express.Router();
+
+
+
+
+//new route
+
+router.post("/createemichart", createEmiChart);
+router.get("/getemichartbymemberId/:memberId", getByMemberId);
+
 router.post("/member-details", addMemberDetails);
 router.post("/coapplicant-details", addFamilyDetails);
 router.get("/members/:memberId", getMemberAndFamilyDetailsById);

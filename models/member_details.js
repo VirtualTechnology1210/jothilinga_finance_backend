@@ -17,6 +17,8 @@ module.exports = (sequelize) => {
         foreignKey: "memberId",
         as: "familyBusinessDetails",
       });
+
+      
       member_details.hasOne(models.loan_details, {
         foreignKey: "memberId",
         as: "loanDetails",
@@ -93,6 +95,11 @@ module.exports = (sequelize) => {
         foreignKey: "memberId",
         as: "fk_member_details_hasOne_booking_process_bm_memberId",
       });
+      member_details.hasMany(models.emi_charts, {
+        foreignKey: "memberId",
+        as: "fk_member_details_hasMany_emi_charts_memberId",
+      });
+
     }
   }
 
