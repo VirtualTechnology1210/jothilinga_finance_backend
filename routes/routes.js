@@ -155,8 +155,33 @@ const getProcessingFeeSummaryReportData = require("../controllers/getProcessingF
 const getJlgProcessingFeeSummaryReportData = require("../controllers/getJlgProcessingFeeSummaryReportData");
 const addOrEditDetails = require("../controllers/addOrEditDetails");
 const uploadBranchManagerBookingProcessDocuments = require("../controllers/uploadBranchManagerBookingProcessDocuments");
+const {getByMemberId} = require("../controllers/emi_chart_controller");
+const {createEmiChart} = require("../controllers/emi_chart_controller");
+const {sendSms} = require("../controllers/sendSms");
+const Delete = require("../controllers/Delete");
+const getMemberContactDetails = require("../controllers/getMemberContactDetails");
+const updateMemberContactDetails = require("../controllers/updateMemberContactDetails");
+const addSavings = require("../controllers/addSavings");
+const getSavingsByMemberId = require("../controllers/getSavingsByMemberId");
+
+
+
+//new Route
+
+
 
 const router = express.Router();
+
+
+
+
+//new route
+
+router.delete("/recepit/delete/", Delete);
+
+router.post("/createemichart", createEmiChart);
+router.get("/getemichartbymemberId/:memberId", getByMemberId);
+
 router.post("/member-details", addMemberDetails);
 router.post("/coapplicant-details", addFamilyDetails);
 router.get("/members/:memberId", getMemberAndFamilyDetailsById);
@@ -228,7 +253,7 @@ router.get(
   getAllMemberDetailsByManagerUsernameAndStatus
 );
 router.get("/login/count", getUserLoginsCount);
-router.get("/pending/details/:memberId", getMemberIdExistenceInModels);
+router.get("/pending/details/:memberId", getMemberIdExistenceInModels); 
 router.post("/creditOfficer/status", addCreditAnalysis);
 router.post("/credit/pdf", uploadCibilPdf);
 router.put(
@@ -350,6 +375,7 @@ router.get(
   "/getAccountStatmentReport/:applicationId",
   getAccountStatementReport
 );
+const getMasterReportEnteredData = require("../controllers/getMasterEnteredDataReport")
 router.get("/getInsurancePendingList", getInsurancePendingList);
 router.post("/addInsuranceReceipt", addInsuranceReceipt);
 router.get("/getPermissionsMatrix", getPermissionsMatrix);
@@ -416,6 +442,18 @@ router.post(
   "/uploadBranchManagerBookingProcessDocuments",
   uploadBranchManagerBookingProcessDocuments
 );
+router.get("/getmasterdataenteredreport" , getMasterReportEnteredData)
+
+router.post("/send-sms", sendSms);
+
+// Contact details routes for Branch Manager edit
+router.get("/getMemberContactDetails/:memberId", getMemberContactDetails);
+router.put("/updateMemberContactDetails", updateMemberContactDetails);
+
+// Savings routes
+router.post("/addSavings", addSavings);
+router.get("/getSavingsByMemberId", getSavingsByMemberId);
+
 // Add more routes as needed
 
 module.exports = router;

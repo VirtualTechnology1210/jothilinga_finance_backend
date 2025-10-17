@@ -69,6 +69,10 @@ module.exports = (sequelize) => {
         foreignKey: "memberId",
         as: "receiptsDetails",
       });
+      member_details.hasMany(models.emi_charts, {
+        foreignKey: "memberId",
+        as: "fk_member_details_hasMany_emi_charts_memberId",
+      });
       member_details.hasMany(models.insurance_receipts, {
         foreignKey: "memberId",
         as: "insuranceReceiptsDetails",
@@ -431,6 +435,14 @@ module.exports = (sequelize) => {
         type: Sequelize.BOOLEAN,
         allowNull: true,
       },
+      impsCharge: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+      },
+      isImpsPaid: {
+        type: Sequelize.BOOLEAN,
+        allowNull: true,
+      },
       amountToRelease: {
         type: Sequelize.BIGINT,
         allowNull: true,
@@ -608,6 +620,18 @@ module.exports = (sequelize) => {
       totalLoanAmountByBm: {
         allowNull: true,
         type: Sequelize.DECIMAL(10, 2),
+      },
+      reasonForContactChange: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      contactChangeUpdatedAt: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      contactChangeUpdatedBy: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
       },
     },
     {

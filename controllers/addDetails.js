@@ -69,7 +69,7 @@ module.exports = addDetails = async (req, res) => {
         const nextNumber = seriesResult.nextNumber;
 
         // Format the loanId: 1111 + branchCode + GL + padded nextNumber
-        const newLoanId = `1111${branchData.branchCode}GL${String(
+        const newLoanId = `1111${branchData.branchCode}BL${String(
           nextNumber
         ).padStart(4, "0")}`;
 

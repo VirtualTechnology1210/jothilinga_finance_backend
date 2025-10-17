@@ -11,19 +11,19 @@ require("dotenv").config({ path: path.resolve(__dirname, "", envFile) });
 
 app.use(express.json());
 
-// app.use(
-//   cors({
-//     origin: `http://localhost:3000`,
-//     credentials: true,
-//   })
-// );
-
 app.use(
   cors({
-    origin: "*",
+    origin: `http://localhost:3000`,
     credentials: true,
   })
 );
+
+// app.use(
+//   cors({
+//     origin: "*",
+//     credentials: true,
+//   })
+// );
 
 // Add body-parser middleware here
 app.use(bodyParser.json({ limit: "50mb" }));

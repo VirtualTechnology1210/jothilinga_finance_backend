@@ -1,9 +1,11 @@
+const { JSON } = require("sequelize");
 const {
   member_details,
   proposed_loan_details,
   manager_credentials,
   branch,
   receipts,
+  emi_charts,
   sequelize,
 } = require("../models");
 
@@ -11,17 +13,17 @@ module.exports = getAccountStatementReport = async (req, res) => {
   const applicationId = req.params.applicationId;
 
   try {
-    // Fetch member details along with associated data
+    // Your existing code (unchanged)
     const member = await member_details.findOne({
       where: { ApplicationId: applicationId },
       include: [
         {
           model: proposed_loan_details,
-          as: "proposedLoanDetails", // Ensure this alias matches the association alias
+          as: "proposedLoanDetails", 
         },
         {
           model: receipts,
-          as: "receiptsDetails", // Ensure this alias matches the association alias
+          as: "receiptsDetails", 
         },
       ],
     });
@@ -34,9 +36,7 @@ module.exports = getAccountStatementReport = async (req, res) => {
     }
 
     const getBranchId = await manager_credentials.findOne({
-      where: {
-        id: member.fieldManagerId,
-      },
+      where: { id: member.fieldManagerId },
     });
 
     if (!getBranchId) {
@@ -45,33 +45,100 @@ module.exports = getAccountStatementReport = async (req, res) => {
       });
     }
 
-    // console.log("getBranchId: " + JSON.stringify(getBranchId));
-
     const getBranchName = await branch.findOne({
-      where: {
-        id: getBranchId.branchId,
-      },
+      where: { id: getBranchId.branchId },
     });
 
-    // Check if getBranchName is null
     if (!getBranchName) {
       return res.json({
         error: `No branch found with id: ${getBranchId.branchId}`,
       });
     }
 
-    // console.log("member: " + JSON.stringify(member));
+    
+    
+   
+    const emiChartRecord = await emi_charts.findOne({
+      where: { memberId: member.id }
+    });
 
-    // Structure the response to include all attributes
+    
+    const allReceipts = await receipts.findAll({
+      where: { memberId: member.id }
+    });
+
+   
+    let totalEmiPaid = 0;
+    let totalPrincipalPaid = 0;
+    let totalInterestPaid = 0;
+    let lastPaidMonth = 0; 
+
+   
+    if (emiChartRecord && emiChartRecord.emiChart) {
+      // let emiChartArray = JSON.parse(emiChartRecord.emiChart);
+      let emiChartArray = emiChartRecord.emiChart;
+
+      emiChartArray.sort((a, b) => a.month - b.month);
+      
+     
+      for (let monthData of emiChartArray) {
+        
+      
+        const emiDate = new Date(monthData.emiDate);
+        
+        
+        const matchingReceipt = allReceipts.find(receipt => {
+          const receiptDate = new Date(receipt.emiDate);
+          
+          
+          return (
+            receiptDate.getFullYear() === emiDate.getFullYear() &&
+            receiptDate.getMonth() === emiDate.getMonth()
+          );
+          
+          
+        });
+
+       
+        if (matchingReceipt && matchingReceipt.status === "paid") {
+          
+          
+          if (monthData.month === lastPaidMonth + 1) {
+            
+            
+            totalEmiPaid += monthData.emiAmount;
+            totalPrincipalPaid += monthData.principalAmount;
+            totalInterestPaid += monthData.interestAmount;
+            
+            
+            lastPaidMonth = monthData.month;
+            
+          } else {
+            // If there's a gap (like Month 2 pending, Month 3 paid), stop counting
+            break;
+          }
+        } else {
+          // If current month is not paid, stop counting
+          break;
+        }
+      }
+    }
+
+    
     const response = {
       memberDetails: member.get(),
       branchName: getBranchName.branchName,
       managerName: getBranchId.employeeName,
+      
+      cumulativeEmiPaid: totalEmiPaid,
+      cumulativePrincipalPaid: totalPrincipalPaid,
+      cumulativeInterestPaid: totalInterestPaid
     };
 
     res.json({ message: response });
+    
   } catch (error) {
-    console.log(error); // Log the error for debugging purposes
+    console.log(error);
     res.json({
       error: "Internal Server Error",
     });

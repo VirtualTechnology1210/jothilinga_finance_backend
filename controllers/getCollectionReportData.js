@@ -4,6 +4,7 @@ const {
   receipts,
   member_business_details,
   bl_collection_approval,
+  emi_charts,
   sequelize,
 } = require("../models");
 const { Sequelize, Op } = require("sequelize");
@@ -21,7 +22,8 @@ module.exports = getCollectionReportData = async (req, res) => {
     const fieldManagerIds = await getFieldManagerRecords({
       userId: id,
     });
-    // Step 1: Fetch collection report data with proposed loan details
+    
+    // Step 1: Fetch collection report data with proposed loan details and EMI charts
     const collectionReportData = await member_details.findAll({
       where: {
         loanType: "Business Loan",
@@ -33,21 +35,25 @@ module.exports = getCollectionReportData = async (req, res) => {
       include: [
         {
           model: member_business_details,
-          as: "businessDetails", // Ensure this alias matches the association alias
+          as: "businessDetails", 
         },
         {
           model: proposed_loan_details,
-          as: "proposedLoanDetails", // Ensure this alias matches the association alias
+          as: "proposedLoanDetails", 
         },
         {
           model: receipts,
-          as: "receiptsDetails", // Ensure this alias matches the association alias
+          as: "receiptsDetails", 
           include: [
             {
               model: bl_collection_approval,
-              as: "fk_receipts_hasOne_bl_collection_approval_receiptId", // Ensure this alias matches the association alias
+              as: "fk_receipts_hasOne_bl_collection_approval_receiptId",
             },
           ],
+        },
+        {
+          model: emi_charts,
+          as: "fk_member_details_hasMany_emi_charts_memberId", // Use the correct association alias
         },
       ],
     });
@@ -76,6 +82,36 @@ module.exports = getCollectionReportData = async (req, res) => {
       }
     );
 
+    // Helper function to get EMI details for a specific EMI date
+    const getEmiDetailsForDate = (emiChartData, emiDate) => {
+      if (!emiChartData || !emiDate) {
+        return { principalAmount: null, interestAmount: null };
+      }
+
+      try {
+        // Parse the emiChart JSON data
+        const emiChart = typeof emiChartData === 'string' 
+          ? JSON.parse(emiChartData) 
+          : emiChartData;
+        
+        // Find the EMI entry that matches the receipt's EMI date
+        const emiEntry = emiChart.find(entry => {
+          // Compare dates (you might need to adjust date comparison based on your date format)
+          const entryDate = new Date(entry.emiDate).toDateString();
+          const receiptDate = new Date(emiDate).toDateString();
+          return entryDate === receiptDate;
+        });
+
+        return {
+          principalAmount: emiEntry ? emiEntry.principalAmount : null,
+          interestAmount: emiEntry ? emiEntry.interestAmount : null
+        };
+      } catch (error) {
+        console.error('Error parsing EMI chart data:', error);
+        return { principalAmount: null, interestAmount: null };
+      }
+    };
+
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
@@ -98,9 +134,20 @@ module.exports = getCollectionReportData = async (req, res) => {
       // Get the loan data in a plain object
       const loanData = loan.toJSON();
 
+      // Get EMI chart data for this loan
+      const emiChartData = loanData.fk_member_details_hasMany_emi_charts_memberId && loanData.fk_member_details_hasMany_emi_charts_memberId.length > 0 
+        ? loanData.fk_member_details_hasMany_emi_charts_memberId[0].emiChart 
+        : null;
+
       // If there are receipts, map each receipt to include the loan data
       if (loanData.receiptsDetails && loanData.receiptsDetails.length > 0) {
         loanData.receiptsDetails.forEach((receipt) => {
+          // Get principal and interest amounts for this specific EMI date
+          const { principalAmount, interestAmount } = getEmiDetailsForDate(
+            emiChartData, 
+            receipt.emiDate
+          );
+
           combinedData.push({
             ...loanData, // Include all loan data
             receiptEmiDate: receipt.emiDate,
@@ -111,6 +158,9 @@ module.exports = getCollectionReportData = async (req, res) => {
             collectionApproval:
               receipt.fk_receipts_hasOne_bl_collection_approval_receiptId ||
               null,
+            // Add principal and interest amounts from EMI chart
+            principalAmount: principalAmount,
+            interestAmount: interestAmount,
             branchName: managerBranch.branchName || null,
             branchCode: managerBranch.branchCode || null,
             divisionName: managerBranch.divisionName || null,
@@ -132,6 +182,8 @@ module.exports = getCollectionReportData = async (req, res) => {
           receiptDescription: null,
           collectedDate: null,
           collectionApproval: null,
+          principalAmount: null,
+          interestAmount: null,
           branchName: managerBranch.branchName || null,
           branchCode: managerBranch.branchCode || null,
           divisionName: managerBranch.divisionName || null,
@@ -139,6 +191,7 @@ module.exports = getCollectionReportData = async (req, res) => {
           regionName: managerBranch.regionName || null,
           regionCode: managerBranch.regionCode || null,
           username: managerBranch.username || null,
+          employeeName: managerBranch.employeeName || null,
           loanCycle: loanCycleMap[customerId],
         });
       }

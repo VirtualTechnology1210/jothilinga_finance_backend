@@ -371,6 +371,20 @@ module.exports = getDashboardCount = async (req, res) => {
         },
       }
     );
+
+    const blInsuranceChargeAmount = await member_details.sum(
+      "insuranceAmount",
+      {
+        where: {
+          loanType: "Business Loan",
+          accountManagerStatus: "payment credited",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }
+    );
+
     const blProcessingChargeAmount = await member_details.sum(
       "processingCharge",
       {
@@ -575,6 +589,7 @@ module.exports = getDashboardCount = async (req, res) => {
       jlgDisbursedLoanCount,
       blSecurityDepositAmount,
       jlgSecurityDepositAmount,
+      blInsuranceChargeAmount,
       blProcessingChargeAmount,
       jlgProcessingChargeAmount,
       blTotalOutstandingPrincipal: Math.round(blTotalOutstandingPrincipal),
@@ -588,6 +603,7 @@ module.exports = getDashboardCount = async (req, res) => {
       blTotalEmiPaid: Math.round(blTotalEmiPaid),
       jlgTotalEmiPaid: Math.round(jlgTotalEmiPaid),
     });
+    console.log("Response for insurance amount .", blInsuranceChargeAmount);
   } catch (error) {
     console.error(error); // Log the error for debugging purposes
     res.status(500).json({
