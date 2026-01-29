@@ -30,7 +30,7 @@ module.exports = getClientProspectReportData = async (req, res) => {
         creditManagerStatus: { [Op.not]: "rejected" },
         sanctionCommitteeStatus: { [Op.not]: "rejected" },
         fieldManagerId: {
-          [Op.in]: fieldManagerIds, // Filter by IDs
+          [Op.in]: fieldManagerIds, 
         },
       },
       include: [

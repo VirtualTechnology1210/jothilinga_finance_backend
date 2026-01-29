@@ -10,7 +10,13 @@ module.exports = {
       },
       businessCategoryId: {
         type: Sequelize.INTEGER,
-        references: { model: "business_categories", key: "id" },
+        allowNull: true,
+        references: {
+          model: "business_categories",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
       },
       natureOfBusiness: {
         type: Sequelize.STRING,

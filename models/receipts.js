@@ -51,6 +51,10 @@ module.exports = (sequelize, DataTypes) => {
         type: Sequelize.DATE,
         allowNull: true,
       },
+       upi_payment: {
+        type: Sequelize.INTEGER,  
+        allowNull: true,
+    },
     },
     {
       sequelize,

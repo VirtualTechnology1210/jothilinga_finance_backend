@@ -306,7 +306,9 @@
 //       details: error.message,
 //     });
 //   }
-// };
+// };  
+
+
 
 const {
   member_details,
@@ -345,9 +347,13 @@ const getEmiDatesFromChart = (emiChart, formattedFromDate, formattedToDate) => {
       // Parse the emiDate from the chart (format: "Fri Aug 15 2025")
       const emiDate = new Date(emiEntry.emiDate);
       const emiDateStr = formatDate(emiDate);
-      
+
       console.log(`Checking EMI date: ${emiDateStr} (${emiEntry.emiDate})`);
-      
+
+      if (emiDateStr === "Invalid Date") {
+        console.log(`Invalid EMI date: ${emiDateStr}`);
+        continue;
+      }
       // Check if this EMI date falls within the requested date range
       if (emiDate >= fromDate && emiDate <= toDate) {
         validEmiDates.push({
@@ -381,7 +387,7 @@ module.exports = getEmiPendingList = async (req, res) => {
 
     const formattedFromDate = formatDate(new Date(fromDate));
     const formattedToDate = formatDate(new Date(toDate));
-    
+
     console.log("formatted fromDate: " + formattedFromDate);
     console.log("formatted toDate: " + formattedToDate);
 
@@ -469,12 +475,12 @@ module.exports = getEmiPendingList = async (req, res) => {
       console.log(`\n=== Processing member ${member.id} - ApplicationId: ${member.ApplicationId} ===`);
 
       // Get EMI chart for this member (only submitted status)
-      const emiChartRecord = member.fk_member_details_hasMany_emi_charts_memberId && member.fk_member_details_hasMany_emi_charts_memberId.length > 0 
-        ? member.fk_member_details_hasMany_emi_charts_memberId.find(chart => 
-            chart.status === 'submitted'
-          )
+      const emiChartRecord = member.fk_member_details_hasMany_emi_charts_memberId && member.fk_member_details_hasMany_emi_charts_memberId.length > 0
+        ? member.fk_member_details_hasMany_emi_charts_memberId.find(chart =>
+          chart.status === 'submitted'
+        )
         : null;
-      
+
       if (!emiChartRecord) {
         console.log(`No submitted EMI chart found for member ${member.id}`);
         continue; // Skip this member if no submitted EMI chart exists
@@ -495,7 +501,7 @@ module.exports = getEmiPendingList = async (req, res) => {
           console.log(`Invalid EMI chart data type for member ${member.id}:`, typeof emiChartRecord.emiChart);
           continue;
         }
-        
+
         console.log(`Found EMI chart for member ${member.id} with ${Array.isArray(emiChart) ? emiChart.length : 'unknown'} EMI entries`);
       } catch (error) {
         console.log(`Error processing EMI chart for member ${member.id}:`, error.message);
@@ -517,9 +523,37 @@ module.exports = getEmiPendingList = async (req, res) => {
       }
 
       // Loop through valid EMI dates and check the receipts
-      for (const emiInfo of validEmiDates) {
+      for (let i = 0; i < validEmiDates.length; i++) {
+        const emiInfo = validEmiDates[i];
         console.log(`\n--- Processing EMI date: ${emiInfo.dateStr} for member ${member.id} ---`);
         console.log(`EMI amount: ${emiInfo.emiAmount}`);
+
+        // Get next EMI info if available
+        const nextEmiInfo = i + 1 < validEmiDates.length ? validEmiDates[i + 1] : null;
+
+        // If no next EMI in validEmiDates, try to get from full emiChart
+        let nextEmiFromChart = null;
+        if (!nextEmiInfo && Array.isArray(emiChart)) {
+          const currentEmiIndex = emiChart.findIndex(e => {
+            const eDate = new Date(e.emiDate);
+            return formatDate(eDate) === emiInfo.dateStr;
+          });
+          if (currentEmiIndex !== -1 && currentEmiIndex + 1 < emiChart.length) {
+            const nextEntry = emiChart[currentEmiIndex + 1];
+            const nextDate = new Date(nextEntry.emiDate);
+            nextEmiFromChart = {
+              date: nextDate,
+              dateStr: formatDate(nextDate),
+              month: nextEntry.month,
+              emiAmount: parseFloat(nextEntry.emiAmount) || 0,
+              principalAmount: parseFloat(nextEntry.principalAmount) || 0,
+              interestAmount: parseFloat(nextEntry.interestAmount) || 0,
+              interestRate: nextEntry.interestRate,
+              remainingPrincipal: parseFloat(nextEntry.remainingPrincipal) || 0
+            };
+          }
+        }
+        const nextEmi = nextEmiInfo || nextEmiFromChart;
 
         // Fetch all receipts for the current emiDate
         const receiptsForEmiDate = await receipts.findAll({
@@ -544,10 +578,15 @@ module.exports = getEmiPendingList = async (req, res) => {
         if (receiptsForEmiDate.length === 0) {
           // No receipts found, meaning no payment has been made
           console.log(`No payment found for member ${member.id} on ${emiInfo.dateStr} - Adding to pending list`);
-          pendingEmiList.push({
+
+          // Check if this is the last EMI (no next EMI available)
+          const isLastEmi = !nextEmi;
+
+          const pendingEmiData = {
             memberId: member.id,
             ApplicationId: member.ApplicationId,
             memberName: member.memberName,
+            phoneNumber: member.phoneNumber,
             emiDate: emiInfo.dateStr,
             emiAmount: emiInfo.emiAmount,
             pendingEmiAmount: emiInfo.emiAmount, // No payment made, so pending amount is full EMI
@@ -555,8 +594,25 @@ module.exports = getEmiPendingList = async (req, res) => {
             principalAmount: emiInfo.principalAmount,
             interestAmount: emiInfo.interestAmount,
             interestRate: emiInfo.interestRate,
-            remainingPrincipal: emiInfo.remainingPrincipal
-          });
+            remainingPrincipal: emiInfo.remainingPrincipal,
+            isLastEmi: isLastEmi,
+            securityDeposit: member.securityDeposit || 0,
+            latitude: member.latitude,
+            longitude: member.longitude,
+          };
+
+          // Add next EMI info if available
+          if (nextEmi) {
+            pendingEmiData.nextEmiDate = nextEmi.dateStr;
+            pendingEmiData.nextEmiAmount = nextEmi.emiAmount;
+            pendingEmiData.nextEmiMonth = nextEmi.month;
+            pendingEmiData.nextEmiPrincipalAmount = nextEmi.principalAmount;
+            pendingEmiData.nextEmiInterestAmount = nextEmi.interestAmount;
+            pendingEmiData.nextEmiInterestRate = nextEmi.interestRate;
+            pendingEmiData.nextEmiRemainingPrincipal = nextEmi.remainingPrincipal;
+          }
+
+          pendingEmiList.push(pendingEmiData);
         } else {
           // Receipts exist, calculate the total paid amount
           const totalPaidAmount = receiptsForEmiDate.reduce((sum, receipt) => {
@@ -570,10 +626,14 @@ module.exports = getEmiPendingList = async (req, res) => {
 
           // If EMI is still pending, add to the pendingEmiList
           if (pendingEmiAmount > 0) {
-            pendingEmiList.push({
+            // Check if this is the last EMI (no next EMI available)
+            const isLastEmi = !nextEmi;
+
+            const pendingEmiData = {
               memberId: member.id,
               ApplicationId: member.ApplicationId,
               memberName: member.memberName,
+              phoneNumber: member.phoneNumber,
               emiDate: emiInfo.dateStr,
               emiAmount: emiInfo.emiAmount,
               pendingEmiAmount: pendingEmiAmount,
@@ -582,10 +642,27 @@ module.exports = getEmiPendingList = async (req, res) => {
               interestAmount: emiInfo.interestAmount,
               interestRate: emiInfo.interestRate,
               remainingPrincipal: emiInfo.remainingPrincipal,
-              totalPaid: totalPaidAmount
-            });
+              totalPaid: totalPaidAmount,
+              isLastEmi: isLastEmi,
+              securityDeposit: member.securityDeposit || 0,
+              latitude: member.latitude,
+              longitude: member.longitude,
+            };
+
+            // Add next EMI info if available
+            if (nextEmi) {
+              pendingEmiData.nextEmiDate = nextEmi.dateStr;
+              pendingEmiData.nextEmiAmount = nextEmi.emiAmount;
+              pendingEmiData.nextEmiMonth = nextEmi.month;
+              pendingEmiData.nextEmiPrincipalAmount = nextEmi.principalAmount;
+              pendingEmiData.nextEmiInterestAmount = nextEmi.interestAmount;
+              pendingEmiData.nextEmiInterestRate = nextEmi.interestRate;
+              pendingEmiData.nextEmiRemainingPrincipal = nextEmi.remainingPrincipal;
+            }
+
+            pendingEmiList.push(pendingEmiData);
           }
-          
+
           // Handle retrigger logic for Customer Relationship Officer
           if (role === "Customer Relationship Officer") {
             for (const receipt of receiptsForEmiDate) {
@@ -596,27 +673,27 @@ module.exports = getEmiPendingList = async (req, res) => {
                 const transformedDenominations =
                   receipt.fk_receipts_hasOne_bl_collection_approval_receiptId
                     ? receipt.fk_receipts_hasOne_bl_collection_approval_receiptId.fk_bl_collection_approval_hasMany_bl_denominations_blCollectionId.reduce(
-                        (acc, curr) => {
-                          acc[curr.denomination] = {
-                            count: parseInt(curr.count) || 0,
-                            subTotal: parseFloat(curr.total) || 0,
-                          };
-                          return acc;
-                        },
-                        {
-                          500: { count: 0, subTotal: 0 },
-                          200: { count: 0, subTotal: 0 },
-                          100: { count: 0, subTotal: 0 },
-                          50: { count: 0, subTotal: 0 },
-                          20: { count: 0, subTotal: 0 },
-                          10: { count: 0, subTotal: 0 },
-                          5: { count: 0, subTotal: 0 },
-                          2: { count: 0, subTotal: 0 },
-                          1: { count: 0, subTotal: 0 },
-                        }
-                      )
+                      (acc, curr) => {
+                        acc[curr.denomination] = {
+                          count: parseInt(curr.count) || 0,
+                          subTotal: parseFloat(curr.total) || 0,
+                        };
+                        return acc;
+                      },
+                      {
+                        500: { count: 0, subTotal: 0 },
+                        200: { count: 0, subTotal: 0 },
+                        100: { count: 0, subTotal: 0 },
+                        50: { count: 0, subTotal: 0 },
+                        20: { count: 0, subTotal: 0 },
+                        10: { count: 0, subTotal: 0 },
+                        5: { count: 0, subTotal: 0 },
+                        2: { count: 0, subTotal: 0 },
+                        1: { count: 0, subTotal: 0 },
+                      }
+                    )
                     : null;
-                
+
                 retriggerEmiList.push({
                   receiptId: receipt.id,
                   memberId: member.id,
@@ -637,7 +714,9 @@ module.exports = getEmiPendingList = async (req, res) => {
                   month: emiInfo.month,
                   principalAmount: emiInfo.principalAmount,
                   interestAmount: emiInfo.interestAmount,
-                  interestRate: emiInfo.interestRate
+                  interestRate: emiInfo.interestRate,
+                  latitude: member.latitude,
+                  longitude: member.longitude,
                 });
               }
             }
@@ -654,9 +733,9 @@ module.exports = getEmiPendingList = async (req, res) => {
     pendingEmiList.sort((a, b) => new Date(a.emiDate) - new Date(b.emiDate));
     retriggerEmiList.sort((a, b) => new Date(a.emiDate) - new Date(b.emiDate));
 
-    res.status(200).json({ 
+    res.status(200).json({
       success: true,
-      pendingEmiList, 
+      pendingEmiList,
       retriggerEmiList,
       totalPending: pendingEmiList.length,
       totalRetrigger: retriggerEmiList.length,

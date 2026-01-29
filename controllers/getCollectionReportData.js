@@ -4,6 +4,7 @@ const {
   receipts,
   member_business_details,
   bl_collection_approval,
+  emi_charts,
   sequelize,
 } = require("../models");
 const { Sequelize, Op } = require("sequelize");
@@ -21,7 +22,8 @@ module.exports = getCollectionReportData = async (req, res) => {
     const fieldManagerIds = await getFieldManagerRecords({
       userId: id,
     });
-    // Step 1: Fetch collection report data with proposed loan details
+
+    // Step 1: Fetch collection report data with proposed loan details and EMI charts
     const collectionReportData = await member_details.findAll({
       where: {
         loanType: "Business Loan",
@@ -33,21 +35,25 @@ module.exports = getCollectionReportData = async (req, res) => {
       include: [
         {
           model: member_business_details,
-          as: "businessDetails", // Ensure this alias matches the association alias
+          as: "businessDetails",
         },
         {
           model: proposed_loan_details,
-          as: "proposedLoanDetails", // Ensure this alias matches the association alias
+          as: "proposedLoanDetails",
         },
         {
           model: receipts,
-          as: "receiptsDetails", // Ensure this alias matches the association alias
+          as: "receiptsDetails",
           include: [
             {
               model: bl_collection_approval,
-              as: "fk_receipts_hasOne_bl_collection_approval_receiptId", // Ensure this alias matches the association alias
+              as: "fk_receipts_hasOne_bl_collection_approval_receiptId",
             },
           ],
+        },
+        {
+          model: emi_charts,
+          as: "fk_member_details_hasMany_emi_charts_memberId", // Use the correct association alias
         },
       ],
     });
@@ -76,6 +82,135 @@ module.exports = getCollectionReportData = async (req, res) => {
       }
     );
 
+    const formatDate = (dateValue) => {
+      if (!dateValue) return null;
+      try {
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) return null;
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    // Helper function to calculate EMI month from disbursement date and EMI date
+    const calculateEmiMonthFromDates = (disbursementDate, emiDate) => {
+      if (!disbursementDate || !emiDate) return null;
+
+      try {
+        const disbDate = new Date(disbursementDate);
+        const emiDateObj = new Date(emiDate);
+
+        if (isNaN(disbDate.getTime()) || isNaN(emiDateObj.getTime())) return null;
+
+        // Calculate months difference
+        const yearDiff = emiDateObj.getFullYear() - disbDate.getFullYear();
+        const monthDiff = emiDateObj.getMonth() - disbDate.getMonth();
+        const totalMonths = (yearDiff * 12) + monthDiff;
+
+        // EMI month is the number of months after disbursement (minimum 1)
+        const emiMonth = Math.max(1, totalMonths);
+
+        return emiMonth;
+      } catch (error) {
+        console.error('Error calculating EMI month from dates:', error);
+        return null;
+      }
+    };
+
+    // Helper function to get EMI details for a specific EMI date
+    const getEmiDetailsForDate = (emiChartData, emiDate, disbursementDate) => {
+      // Calculate EMI month from dates as fallback (this always works)
+      const calculatedEmiMonth = calculateEmiMonthFromDates(disbursementDate, emiDate);
+
+      // If no emiDate provided, return with calculated month
+      if (!emiDate) {
+        return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
+      }
+
+      // If no EMI chart data, return with calculated month
+      if (!emiChartData) {
+        return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
+      }
+
+      try {
+        // Parse the emiChart JSON data
+        const emiChart = typeof emiChartData === 'string'
+          ? JSON.parse(emiChartData)
+          : emiChartData;
+
+        if (!Array.isArray(emiChart) || emiChart.length === 0) {
+          return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
+        }
+
+        const formattedReceiptDate = formatDate(emiDate);
+
+        // Find the EMI entry that matches the receipt's EMI date
+        let emiEntry = null;
+        let matchIndex = -1;
+
+        for (let i = 0; i < emiChart.length; i++) {
+          const entry = emiChart[i];
+          const formattedEntryDate = formatDate(entry.emiDate);
+
+          if (formattedEntryDate === formattedReceiptDate) {
+            emiEntry = entry;
+            matchIndex = i;
+            break;
+          }
+        }
+
+        // If not found by exact date, try to use the calculated month as index
+        if (!emiEntry && calculatedEmiMonth && calculatedEmiMonth >= 1 && calculatedEmiMonth <= emiChart.length) {
+          emiEntry = emiChart[calculatedEmiMonth - 1];
+          matchIndex = calculatedEmiMonth - 1;
+        }
+
+        // If still not found, try day matching
+        if (!emiEntry && emiChart.length > 0) {
+          const receiptDay = new Date(emiDate).getDate();
+          for (let i = 0; i < emiChart.length; i++) {
+            const entryDate = new Date(emiChart[i].emiDate);
+            if (entryDate.getDate() === receiptDay) {
+              const receiptMonth = new Date(emiDate).getMonth();
+              const entryMonth = entryDate.getMonth();
+              const receiptYear = new Date(emiDate).getFullYear();
+              const entryYear = entryDate.getFullYear();
+
+              if (receiptMonth === entryMonth && receiptYear === entryYear) {
+                emiEntry = emiChart[i];
+                matchIndex = i;
+                break;
+              }
+            }
+          }
+        }
+
+        // Determine final emiMonth value
+        let finalEmiMonth = calculatedEmiMonth; // Use calculated as default
+        if (emiEntry && emiEntry.month) {
+          finalEmiMonth = emiEntry.month;
+        } else if (matchIndex >= 0) {
+          finalEmiMonth = matchIndex + 1;
+        }
+
+        const result = {
+          principalAmount: emiEntry ? emiEntry.principalAmount : null,
+          interestAmount: emiEntry ? emiEntry.interestAmount : null,
+          emiMonth: finalEmiMonth
+        };
+
+        return result;
+      } catch (error) {
+        console.error('Error parsing EMI chart data:', error);
+        return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
+      }
+    };
+
+
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
@@ -98,9 +233,21 @@ module.exports = getCollectionReportData = async (req, res) => {
       // Get the loan data in a plain object
       const loanData = loan.toJSON();
 
+      // Get EMI chart data for this loan (specifically 'submitted' status)
+      const emiCharts = loanData.fk_member_details_hasMany_emi_charts_memberId || [];
+      const submittedChart = emiCharts.find(chart => chart.status === 'submitted') || emiCharts[0];
+      const emiChartData = submittedChart ? submittedChart.emiChart : null;
+
       // If there are receipts, map each receipt to include the loan data
       if (loanData.receiptsDetails && loanData.receiptsDetails.length > 0) {
         loanData.receiptsDetails.forEach((receipt) => {
+          // Get principal and interest amounts for this specific EMI date
+          const { principalAmount, interestAmount, emiMonth } = getEmiDetailsForDate(
+            emiChartData,
+            receipt.emiDate,
+            loanData.branchManagerStatusUpdatedAt // Pass disbursement date for fallback calculation
+          );
+
           combinedData.push({
             ...loanData, // Include all loan data
             receiptEmiDate: receipt.emiDate,
@@ -111,6 +258,10 @@ module.exports = getCollectionReportData = async (req, res) => {
             collectionApproval:
               receipt.fk_receipts_hasOne_bl_collection_approval_receiptId ||
               null,
+            // Add principal and interest amounts from EMI chart
+            principalAmount: principalAmount,
+            interestAmount: interestAmount,
+            emiMonth: emiMonth,
             branchName: managerBranch.branchName || null,
             branchCode: managerBranch.branchCode || null,
             divisionName: managerBranch.divisionName || null,
@@ -132,6 +283,8 @@ module.exports = getCollectionReportData = async (req, res) => {
           receiptDescription: null,
           collectedDate: null,
           collectionApproval: null,
+          principalAmount: null,
+          interestAmount: null,
           branchName: managerBranch.branchName || null,
           branchCode: managerBranch.branchCode || null,
           divisionName: managerBranch.divisionName || null,
@@ -139,6 +292,7 @@ module.exports = getCollectionReportData = async (req, res) => {
           regionName: managerBranch.regionName || null,
           regionCode: managerBranch.regionCode || null,
           username: managerBranch.username || null,
+          employeeName: managerBranch.employeeName || null,
           loanCycle: loanCycleMap[customerId],
         });
       }

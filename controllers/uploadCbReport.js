@@ -104,7 +104,7 @@ const uploadCbReport = async (req, res) => {
             coApplicantCbReport: photoData["coApplicantCbReport"],
             pdf1: photoData["pdf1"],
             pdf2: photoData["pdf2"],
-            creditManagerStatus: "pending",
+            creditManagerStatus: "submitted",
             creditManagerMessage,
             sanctionedLoanAmountByCreditManager,
             totalIncomeVerifiedByCreditManager,
