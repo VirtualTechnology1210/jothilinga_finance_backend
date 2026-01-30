@@ -123,21 +123,21 @@
 //   return emiDetails.filter(emi => {
 //     try {
 //       if (!emi.emiDate) return false;
-      
+
 //       const emiDate = new Date(emi.emiDate);
 //       if (isNaN(emiDate.getTime())) {
 //         return false;
 //       }
-      
+
 //       // If no date range provided, include all EMIs
 //       if (!startDate && !endDate) {
 //         return true;
 //       }
-      
+
 //       // Check if EMI date is within range
 //       const isAfterStart = !startDate || emiDate >= startDate;
 //       const isBeforeEnd = !endDate || emiDate <= endDate;
-      
+
 //       return isAfterStart && isBeforeEnd;
 //     } catch (error) {
 //       console.error("Error processing EMI date:", error);
@@ -157,7 +157,7 @@
 //     // Prepare a map to track loan cycles per customerId
 //     const loanCycleMap = {};
 
-    
+
 
 //     let combinedData = [];
 
@@ -195,12 +195,12 @@
 //       if (includeMonthlyBreakdown === 'true') {
 //         // Filter EMI details based on date range
 //         const filteredEmis = filterEmiDatesInRange(emiDetails, fromDate, toDate);
-        
+
 //         // Only include this member if they have EMIs in the date range
 //         if (filteredEmis.length > 0) {
 //           filteredEmis.forEach(emi => {
 //             const formattedEmiDate = formatToValidDate(emi.emiDate);
-            
+
 //             combinedData.push({
 //               ...baseLoanData,
 //               emiDate: formattedEmiDate,
@@ -212,19 +212,19 @@
 //             });
 //           });
 //         }
-        
+
 //       } else {
 //         // For non-breakdown mode, find the next EMI in the date range
 //         const nextEmiIndex = Math.min(emiMonthsPaid, emiDetails.length - 1);
 //         const currentEmiData = emiDetails[nextEmiIndex] || emiDetails[0] || {};
 //         const emiDate = currentEmiData.emiDate ? formatToValidDate(currentEmiData.emiDate) : null;
-        
+
 //         // Check if this EMI falls within the date range
 //         const emiInRange = !fromDate && !toDate ? true : 
 //           (emiDate && 
 //            (!fromDate || emiDate >= formatToValidDate(fromDate)) && 
 //            (!toDate || emiDate <= formatToValidDate(toDate)));
-        
+
 //         if (emiInRange) {
 //           combinedData.push({
 //             ...baseLoanData,
@@ -277,6 +277,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
       where: {
         loanType: "Business Loan",
         branchManagerStatus: "disbursed",
+        loanStatus: { [Op.notIn]: ["foreclosed", "Foreclosed", "Foreclosure", "completed", "Completed"] }, // Exclude foreclosed and completed loans
         fieldManagerId: { [Op.in]: fieldManagerIds },
       },
       include: [
@@ -330,8 +331,8 @@ module.exports = getFutureDemandReportData = async (req, res) => {
 
       emiChartsData.forEach(row => {
         try {
-          const parsedEmiChart = typeof row.emiChart === "string" 
-            ? JSON.parse(row.emiChart) 
+          const parsedEmiChart = typeof row.emiChart === "string"
+            ? JSON.parse(row.emiChart)
             : row.emiChart;
           emiChartMap[row.memberId] = parsedEmiChart;
         } catch (error) {
@@ -342,7 +343,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
 
       // NEW: Fetch all receipts for these loans (including future collections)
       console.log(`Fetching receipts for loans...`);
-      
+
       const receiptsData = await receipts.findAll({
         where: {
           memberId: { [Op.in]: loanIdsArray },
@@ -353,7 +354,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
         },
         attributes: [
           "memberId",
-          "status", 
+          "status",
           "emiAmount",
           "receivedAmount",
           "collectedDate",
@@ -386,7 +387,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
       try {
         const date = new Date(emiDateStr);
         if (isNaN(date.getTime())) return null;
-        
+
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
@@ -400,17 +401,17 @@ module.exports = getFutureDemandReportData = async (req, res) => {
     const isDateInRange = (dateStr, fromDate, toDate) => {
       if (!dateStr) return false;
       if (!fromDate && !toDate) return true;
-      
+
       try {
         const checkDate = new Date(dateStr);
         if (isNaN(checkDate.getTime())) return false;
-        
+
         const start = fromDate ? new Date(fromDate) : null;
         const end = toDate ? new Date(toDate) : null;
-        
+
         const afterStart = !start || checkDate >= start;
         const beforeEnd = !end || checkDate <= end;
-        
+
         return afterStart && beforeEnd;
       } catch (error) {
         return false;
@@ -421,7 +422,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
     const calculateReceivedAmountForEmi = (memberId, emiDate, emiAmount) => {
       const memberReceipts = receiptsMap[memberId] || [];
       const emiDateObj = new Date(emiDate);
-      
+
       // Find payments that match this specific EMI
       const matchingPayments = memberReceipts.filter(payment => {
         // Method 1: Exact EMI date match
@@ -431,21 +432,21 @@ module.exports = getFutureDemandReportData = async (req, res) => {
             return true;
           }
         }
-        
+
         // Method 2: Amount and reasonable time window match
         const collectedDate = new Date(payment.collectedDate);
         const daysDifference = Math.abs((collectedDate - emiDateObj) / (1000 * 60 * 60 * 24));
         const amountMatch = Math.abs(payment.emiAmount - emiAmount) < 1;
-        
+
         return amountMatch && daysDifference <= 60;
       });
-      
+
       // Sum up all matching payments
       const totalReceived = matchingPayments.reduce((sum, payment) => sum + payment.receivedAmount, 0);
-      
+
       return {
         receivedAmount: Math.round(totalReceived * 100) / 100,
-        
+
         paymentCount: matchingPayments.length,
         matchingPayments: matchingPayments,
         isFullyPaid: totalReceived >= emiAmount,
@@ -496,12 +497,12 @@ module.exports = getFutureDemandReportData = async (req, res) => {
         // Include all EMIs within date range with received amounts
         emiDetails.forEach(emi => {
           const formattedDate = formatEmiDate(emi.emiDate);
-          
+
           if (formattedDate && isDateInRange(formattedDate, fromDate, toDate)) {
             // NEW: Calculate received amount for this EMI
             const emiAmount = parseFloat(emi.emiAmount || 0);
             const paymentInfo = calculateReceivedAmountForEmi(loan.id, formattedDate, emiAmount);
-            
+
             combinedData.push({
               ...baseLoanData,
               emiDate: formattedDate,
@@ -510,22 +511,22 @@ module.exports = getFutureDemandReportData = async (req, res) => {
               interestAmount: parseFloat(emi.interestAmount || 0),
               emiAmount: emiAmount,
               outstandingBalance: parseFloat(emi.remainingPrincipal || 0),
-              
+
               // NEW: Payment information
               receivedAmount: paymentInfo.receivedAmount,
               outstandingAmount: paymentInfo.outstandingAmount,
               collectionEfficiency: paymentInfo.collectionEfficiency,
-              paymentStatus: paymentInfo.isFullyPaid ? 'Fully Paid' : 
-                           paymentInfo.isPartiallyPaid ? 'Partially Paid' : 'Not Paid',
+              paymentStatus: paymentInfo.isFullyPaid ? 'Fully Paid' :
+                paymentInfo.isPartiallyPaid ? 'Partially Paid' : 'Not Paid',
               isFullyPaid: paymentInfo.isFullyPaid,
               isPartiallyPaid: paymentInfo.isPartiallyPaid,
               isUnpaid: paymentInfo.isUnpaid,
               paymentCount: paymentInfo.paymentCount,
-              
+
               // Additional helpful fields
               needsCollection: paymentInfo.outstandingAmount > 0,
-              collectionPriority: paymentInfo.isUnpaid ? 'High' : 
-                                 paymentInfo.isPartiallyPaid ? 'Medium' : 'Low'
+              collectionPriority: paymentInfo.isUnpaid ? 'High' :
+                paymentInfo.isPartiallyPaid ? 'Medium' : 'Low'
             });
           }
         });
@@ -533,15 +534,15 @@ module.exports = getFutureDemandReportData = async (req, res) => {
         // Get current/next EMI based on months paid with received amounts
         const currentEmiIndex = Math.max(0, Math.min(emiMonthsPaid, emiDetails.length - 1));
         const currentEmi = emiDetails[currentEmiIndex];
-        
+
         if (currentEmi) {
           const formattedDate = formatEmiDate(currentEmi.emiDate);
-          
+
           if (formattedDate && isDateInRange(formattedDate, fromDate, toDate)) {
             // NEW: Calculate received amount for this EMI
             const emiAmount = parseFloat(currentEmi.emiAmount || 0);
             const paymentInfo = calculateReceivedAmountForEmi(loan.id, formattedDate, emiAmount);
-            
+
             combinedData.push({
               ...baseLoanData,
               emiDate: formattedDate,
@@ -550,22 +551,22 @@ module.exports = getFutureDemandReportData = async (req, res) => {
               interestAmount: parseFloat(currentEmi.interestAmount || 0),
               emiAmount: emiAmount,
               outstandingBalance: parseFloat(currentEmi.remainingPrincipal || 0),
-              
+
               // NEW: Payment information
               receivedAmount: paymentInfo.receivedAmount,
               outstandingAmount: paymentInfo.outstandingAmount,
               collectionEfficiency: paymentInfo.collectionEfficiency,
-              paymentStatus: paymentInfo.isFullyPaid ? 'Fully Paid' : 
-                           paymentInfo.isPartiallyPaid ? 'Partially Paid' : 'Not Paid',
+              paymentStatus: paymentInfo.isFullyPaid ? 'Fully Paid' :
+                paymentInfo.isPartiallyPaid ? 'Partially Paid' : 'Not Paid',
               isFullyPaid: paymentInfo.isFullyPaid,
               isPartiallyPaid: paymentInfo.isPartiallyPaid,
               isUnpaid: paymentInfo.isUnpaid,
               paymentCount: paymentInfo.paymentCount,
-              
+
               // Additional helpful fields
               needsCollection: paymentInfo.outstandingAmount > 0,
-              collectionPriority: paymentInfo.isUnpaid ? 'High' : 
-                                 paymentInfo.isPartiallyPaid ? 'Medium' : 'Low'
+              collectionPriority: paymentInfo.isUnpaid ? 'High' :
+                paymentInfo.isPartiallyPaid ? 'Medium' : 'Low'
             });
           }
         }
@@ -582,7 +583,7 @@ module.exports = getFutureDemandReportData = async (req, res) => {
       totalReceivedAmount: Math.round(combinedData.reduce((sum, item) => sum + item.receivedAmount, 0) * 100) / 100,
       totalOutstandingAmount: Math.round(combinedData.reduce((sum, item) => sum + item.outstandingAmount, 0) * 100) / 100,
       overallCollectionEfficiency: 0
-      
+
     };
 
     if (summary.totalDemandAmount > 0) {

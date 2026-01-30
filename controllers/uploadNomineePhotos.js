@@ -1,4 +1,4 @@
-const multer = require("multer");
+                                                  const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { nominee_photos, member_details } = require("../models"); // Adjust the import path as needed

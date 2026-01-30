@@ -29,8 +29,16 @@ module.exports = foreclosureSubmit = async (req, res) => {
             reason: foreClosureData.reason,
             branchManagerStatus: "submitted",
             branchManagerStatusUpdatedAt: new Date().toISOString(),
+            securityDeposit: foreClosureData.securityDeposit,
+            netPayableAmount: foreClosureData.netPayableAmount,
           },
           { transaction }
+        );
+
+        // Update member_details loanStatus to foreclosed
+        await member_details.update(
+          { loanStatus: "foreclosed" },
+          { where: { id: foreClosureData.memberId }, transaction }
         );
       } else if (
         foreClosureData.type === "Edit" &&
@@ -48,6 +56,8 @@ module.exports = foreclosureSubmit = async (req, res) => {
             reason: foreClosureData.reason,
             branchManagerStatus: "submitted",
             branchManagerStatusUpdatedAt: new Date().toISOString(),
+            securityDeposit: foreClosureData.securityDeposit,
+            netPayableAmount: foreClosureData.netPayableAmount,
           },
           {
             where: { id: foreClosureData.approvalId },

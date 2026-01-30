@@ -124,6 +124,7 @@ module.exports = getJlgEmiPendingList = async (req, res) => {
       whereCondition.loanType = "JLG Loan";
       whereCondition.centerId = centerId;
       whereCondition.branchManagerStatus = "disbursed";
+      whereCondition.loanStatus = { [Op.notIn]: ["foreclosed", "completed"] }; // Exclude foreclosed and completed loans
     } else {
       return res.json({ error: "Invalid role" });
     }
@@ -220,8 +221,8 @@ module.exports = getJlgEmiPendingList = async (req, res) => {
           memberId: member.id,
           ...(getJlgCollection &&
             getJlgCollection.collectedDate && {
-              collectedDate: getJlgCollection.collectedDate,
-            }),
+            collectedDate: getJlgCollection.collectedDate,
+          }),
         },
       });
       const totalCollectionAmount = getCollectionAmount.reduce(
@@ -240,10 +241,10 @@ module.exports = getJlgEmiPendingList = async (req, res) => {
               emiDate: formatDate(emiDate),
               ...(getJlgCollection &&
                 getJlgCollection.collectedDate && {
-                  collectedDate: {
-                    [Op.ne]: getJlgCollection.collectedDate, // NOT EQUAL condition
-                  },
-                }),
+                collectedDate: {
+                  [Op.ne]: getJlgCollection.collectedDate, // NOT EQUAL condition
+                },
+              }),
             },
           });
 
@@ -306,25 +307,25 @@ module.exports = getJlgEmiPendingList = async (req, res) => {
     }
     const transformedDenominations = getJlgCollection
       ? getJlgCollection.fk_jlg_collection_approval_hasMany_jlg_denominations_jlgCollectionId.reduce(
-          (acc, curr) => {
-            acc[curr.denomination] = {
-              count: curr.count,
-              subTotal: curr.total,
-            };
-            return acc;
-          },
-          {
-            500: { count: 0, subTotal: 0 },
-            200: { count: 0, subTotal: 0 },
-            100: { count: 0, subTotal: 0 },
-            50: { count: 0, subTotal: 0 },
-            20: { count: 0, subTotal: 0 },
-            10: { count: 0, subTotal: 0 },
-            5: { count: 0, subTotal: 0 },
-            2: { count: 0, subTotal: 0 },
-            1: { count: 0, subTotal: 0 },
-          }
-        )
+        (acc, curr) => {
+          acc[curr.denomination] = {
+            count: curr.count,
+            subTotal: curr.total,
+          };
+          return acc;
+        },
+        {
+          500: { count: 0, subTotal: 0 },
+          200: { count: 0, subTotal: 0 },
+          100: { count: 0, subTotal: 0 },
+          50: { count: 0, subTotal: 0 },
+          20: { count: 0, subTotal: 0 },
+          10: { count: 0, subTotal: 0 },
+          5: { count: 0, subTotal: 0 },
+          2: { count: 0, subTotal: 0 },
+          1: { count: 0, subTotal: 0 },
+        }
+      )
       : null;
     res.json({
       pendingEmiList,

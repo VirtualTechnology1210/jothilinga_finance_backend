@@ -47,6 +47,14 @@ module.exports = (sequelize, DataTypes) => {
         type: Sequelize.INTEGER,
         allowNull: true,
       },
+      securityDeposit: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+      },
+      netPayableAmount: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+      },
       reason: {
         type: Sequelize.TEXT,
         allowNull: true,

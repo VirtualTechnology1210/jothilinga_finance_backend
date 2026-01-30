@@ -14,7 +14,7 @@ const migrationTemplate = (modelName) => `
 'use strict';
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('${modelName}', {
+    await queryInterface.createTable('${modelName}s', {
       id: {
         allowNull: false,
         autoIncrement: true,
@@ -32,7 +32,7 @@ module.exports = {
     });
   },
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('${modelName}');
+    await queryInterface.dropTable('${modelName}s');
   }
 };
 `;
@@ -40,10 +40,10 @@ module.exports = {
 // Function to generate model template (without attributes)
 const modelTemplate = (modelName) => `
 'use strict';
-const Sequelize = require('sequelize');
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  class ${modelName} extends Sequelize.Model {
+  class ${modelName} extends Model {
     static associate(models) {
       // define association here
     }
@@ -54,33 +54,16 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: '${modelName}',
-    freezeTableName: true,
   });
 
   return ${modelName};
 };
 `;
 
-// Function to generate a formatted UTC timestamp (same as Sequelize CLI, in UTC)
-const getFormattedTimestamp = () => {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const day = String(now.getUTCDate()).padStart(2, "0");
-  const hours = String(now.getUTCHours()).padStart(2, "0");
-  const minutes = String(now.getUTCMinutes()).padStart(2, "0");
-  const seconds = String(now.getUTCSeconds()).padStart(2, "0");
-
-  return `${year}${month}${day}${hours}${minutes}${seconds}`;
-};
-
-// Generate and save the migration and model files
-const timestamp = getFormattedTimestamp();
-
 // Generate and save the migration and model files
 const migrationFilename = path.join(
   __dirname,
-  `migrations/${timestamp}-create-${modelName.toLowerCase()}.js`
+  `migrations/${Date.now()}-create-${modelName.toLowerCase()}.js`
 );
 const modelFilename = path.join(
   __dirname,

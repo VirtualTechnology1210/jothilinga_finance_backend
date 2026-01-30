@@ -166,7 +166,7 @@ const addReceiptWithImage = async (req, res) => {
     console.log("Request Headers:", JSON.stringify(req.headers, null, 2));
     console.log("Request Query Params:", JSON.stringify(req.query, null, 2));
     console.log("Initial Request Body:", JSON.stringify(req.body, null, 2));
-    
+
     // Define storage for uploaded files
     const storage = multer.diskStorage({
       destination: function (req, file, cb) {
@@ -213,15 +213,18 @@ const addReceiptWithImage = async (req, res) => {
           description,
           denominations,
           currentISTDateTime,
-          transactionId,   
-          paymentMethod, 
-          upiAmount,      // New field for UPI amount
-          cashAmount,     // New field for cash amount
+          transactionId,
+          paymentMethod,
+          upiAmount,
+          cashAmount,
           hasExcessPayment,
           excessAmount,
           nextEmiDate,
           nextEmiAmount,
           nextEmiMonth,
+          useSecurityDeposit,
+          isCreateSavingsOnly,
+          securityDepositAmount,
         } = req.body;
 
         console.log("\n=== EXTRACTED FORM DATA ===");
@@ -262,8 +265,8 @@ const addReceiptWithImage = async (req, res) => {
           console.log("Amount validation failed:");
           console.log(`Cash (${parsedCashAmount}) + UPI (${parsedUpiAmount}) = ${calculatedTotal}`);
           console.log(`But received amount is: ${parsedReceivedAmount}`);
-          return res.status(400).json({ 
-            error: "Payment amount mismatch. Cash + UPI should equal received amount." 
+          return res.status(400).json({
+            error: "Payment amount mismatch. Cash + UPI should equal received amount."
           });
         }
 
@@ -271,7 +274,7 @@ const addReceiptWithImage = async (req, res) => {
           typeof denominations === "string"
             ? JSON.parse(denominations)
             : denominations;
-        
+
         console.log("Parsed Denominations:", JSON.stringify(parsedDenominations, null, 2));
 
         // Validate cash denominations total matches cash amount
@@ -279,7 +282,7 @@ const addReceiptWithImage = async (req, res) => {
           (sum, [denomination, { subTotal }]) => sum + (subTotal || 0),
           0
         );
-        
+
         console.log("Denomination Total:", denominationTotal);
         console.log("Expected Cash Amount:", parsedCashAmount);
 
@@ -287,11 +290,11 @@ const addReceiptWithImage = async (req, res) => {
           console.log("Denomination validation failed:");
           console.log(`Denomination total: ${denominationTotal}`);
           console.log(`Expected cash amount: ${parsedCashAmount}`);
-          return res.status(400).json({ 
-            error: "Denomination total doesn't match cash amount." 
+          return res.status(400).json({
+            error: "Denomination total doesn't match cash amount."
           });
         }
-               
+
         const status = Number(receivedAmount) >= Number(pendingEmiAmount) ? "paid" : "pending";
         console.log("Calculated Status:", status);
 
@@ -309,7 +312,7 @@ const addReceiptWithImage = async (req, res) => {
             console.log("  Mimetype:", file.mimetype);
             console.log("  Size:", file.size);
             console.log("  Path:", file.path);
-            
+
             const fieldName = file.fieldname; // This is the field name from frontend
             fileData[fieldName] = file.filename; // Store the filename in fileData object
           });
@@ -326,7 +329,7 @@ const addReceiptWithImage = async (req, res) => {
           transaction,
         });
         console.log("Found Role:", croRole ? croRole.toJSON() : "Not found");
-        
+
         if (!croRole) {
           return res.json({ error: "role doesnot exist" });
         }
@@ -336,10 +339,47 @@ const addReceiptWithImage = async (req, res) => {
           transaction,
         });
         console.log("Found Manager:", manager ? manager.toJSON() : "Not found");
-        
+
         if (!manager) {
           return res.json({ error: "manager credentials doesnot exist" });
         }
+
+        // --- SECURITY DEPOSIT & SAVINGS LOGIC ---
+        let sdAmountUsed = 0;
+        let savingsAmount = 0;
+        const parsedSDAmount = parseFloat(securityDepositAmount) || 0;
+
+        if (isCreateSavingsOnly === 'true' && parsedSDAmount > 0) {
+          savingsAmount = parsedSDAmount;
+          await models["savings"].create({
+            memberId,
+            savingAmount: savingsAmount,
+          }, { transaction });
+
+          await models["member_details"].update(
+            { securityDeposit: 0 },
+            { where: { id: memberId }, transaction }
+          );
+          console.log(`Moved full security deposit ${parsedSDAmount} to savings for member ${memberId}`);
+        } else if (useSecurityDeposit === 'true' && parsedSDAmount > 0) {
+          sdAmountUsed = Math.min(parsedSDAmount, parseFloat(pendingEmiAmount));
+          const sdBalance = parsedSDAmount - sdAmountUsed;
+
+          if (sdBalance > 0) {
+            savingsAmount = sdBalance;
+            await models["savings"].create({
+              memberId,
+              savingAmount: savingsAmount,
+            }, { transaction });
+          }
+
+          await models["member_details"].update(
+            { securityDeposit: 0 },
+            { where: { id: memberId }, transaction }
+          );
+          console.log(`Used ${sdAmountUsed} from SD and moved ${savingsAmount} to savings for member ${memberId}`);
+        }
+        // ----------------------------------------
 
         // Check if there's excess payment for next EMI
         const hasExcess = hasExcessPayment === 'true' && excessAmount && parseFloat(excessAmount) > 0;
@@ -366,6 +406,15 @@ const addReceiptWithImage = async (req, res) => {
           cash_amount: parsedCashAmount,
           transaction_id: transactionId || null,
         };
+
+        if (sdAmountUsed > 0) {
+          receiptData.description = (receiptData.description ? receiptData.description + " " : "") +
+            `(Used Security Deposit: ₹${sdAmountUsed})`;
+        }
+        if (savingsAmount > 0) {
+          receiptData.description = (receiptData.description ? receiptData.description + " " : "") +
+            `(Moved to Savings: ₹${savingsAmount})`;
+        }
         console.log("Receipt Data to be created:", JSON.stringify(receiptData, null, 2));
 
         const createdReceipt = await models["receipts"].create(
@@ -394,7 +443,7 @@ const addReceiptWithImage = async (req, res) => {
         console.log("Created BL Collection:", createBlCollection.toJSON());
 
         console.log("\n=== CREATING DENOMINATIONS ===");
-        
+
         // Create cash denominations entries
         for (const [denomination, { count, subTotal }] of Object.entries(
           parsedDenominations
@@ -407,7 +456,7 @@ const addReceiptWithImage = async (req, res) => {
             transactionId: transactionId || null,
           };
           console.log("Creating cash denomination:", JSON.stringify(denominationData, null, 2));
-          
+
           await models["bl_denominations"].create(
             denominationData,
             { transaction }
@@ -418,14 +467,14 @@ const addReceiptWithImage = async (req, res) => {
         if (parsedUpiAmount > 0) {
           const upiDenominationData = {
             blCollectionId: createBlCollection.id,
-            denomination: 0, 
+            denomination: 0,
             count: 1,
             total: parsedUpiAmount,
             transactionId: transactionId || null,
             payment_type: 'UPI',
           };
           console.log("Creating UPI denomination entry:", JSON.stringify(upiDenominationData, null, 2));
-          
+
           await models["bl_denominations"].create(
             upiDenominationData,
             { transaction }
@@ -435,10 +484,10 @@ const addReceiptWithImage = async (req, res) => {
         // Handle excess payment - create advance receipt for next EMI
         if (hasExcess && nextEmiDate) {
           console.log("\n=== CREATING ADVANCE RECEIPT FOR NEXT EMI ===");
-          
+
           // Generate new receipt number for advance payment
           const advanceReceiptNo = `${receiptNo}-ADV`;
-          
+
           const advanceReceiptData = {
             memberId,
             managerId,
@@ -489,7 +538,7 @@ const addReceiptWithImage = async (req, res) => {
             payment_type: 'UPI',
           };
           console.log("Creating advance UPI denomination entry:", JSON.stringify(advanceUpiDenominationData, null, 2));
-          
+
           await models["bl_denominations"].create(
             advanceUpiDenominationData,
             { transaction }
@@ -498,10 +547,10 @@ const addReceiptWithImage = async (req, res) => {
         await transaction.commit();
         console.log("\n=== SUCCESS ===");
         console.log("Transaction committed successfully");
-        
+
         // Send a success response with saved data
         const responseData = {
-          message: hasExcess 
+          message: hasExcess
             ? "Payment processed successfully! Current EMI paid and advance payment recorded for next EMI."
             : "Data with images uploaded successfully!",
           paymentSummary: {
@@ -536,7 +585,7 @@ const addReceiptWithImage = async (req, res) => {
     console.error("\n=== TRANSACTION ERROR ===");
     console.error("Transaction rolled back due to error:", error);
     console.error("Error stack:", error.stack);
-    
+
     if (error.name === "SequelizeUniqueConstraintError") {
       console.error("Unique constraint violation details:", error.errors);
       return res.status(400).json({

@@ -4,11 +4,11 @@ const envFile = `.env.${process.env.NODE_ENV}`;
 require("dotenv").config({ path: path.resolve(__dirname, "..", envFile) });
 
 const commonConfig = {
-  username: process.env.DB_USER ,
-  password: process.env.DB_PASSWORD ,
-  database: process.env.DB_NAME ,
-  host: process.env.DB_HOST,
-  dialect: process.env.DB_DIALECT,
+  username: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "jothilinga_finance",
+  host: process.env.DB_HOST|| "localhost",
+  dialect: process.env.DB_DIALECT || "mysql",
   pool: {
     max: 5,           
     min: 0,           // Reduced from 2 to allow all connections to be released

@@ -395,6 +395,7 @@ module.exports = getEmiPendingList = async (req, res) => {
     const whereCondition = {
       branchManagerStatus: "disbursed",
       loanType: "Business Loan",
+      loanStatus: { [Op.notIn]: ["foreclosed", "completed"] }, // Exclude foreclosed and completed loans
     };
 
     // Define additional filtering based on role

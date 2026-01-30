@@ -223,6 +223,51 @@ module.exports = getForeclosureDataForBm = async (req, res) => {
         message: "No member found with the provided search criteria",
       });
     }
+
+    // Validate Branch Access
+    const loggedInManager = await manager_credentials.findOne({
+      where: { id: manager_id },
+      attributes: ["branchId"],
+    });
+
+    if (!loggedInManager) {
+      return res.status(403).json({
+        error: "Access Denied",
+        message: "Invalid Manager Credentials",
+      });
+    }
+
+    const memberFieldManager = await manager_credentials.findOne({
+      where: { id: member.fieldManagerId },
+      attributes: ["branchId"],
+    });
+
+    if (!memberFieldManager) {
+      // Fallback: If no field manager linked, we cannot verify branch.
+      // Secure default: Deny access.
+      return res.status(404).json({
+        error: "Member Linkage Error",
+        message: "Member not linked to a valid branch setup (No Field Manager)",
+      });
+    }
+
+    const bmBranches = loggedInManager.branchId
+      ? loggedInManager.branchId.toString().split(",").map(id => id.trim())
+      : [];
+
+    const memberBranches = memberFieldManager.branchId
+      ? memberFieldManager.branchId.toString().split(",").map(id => id.trim())
+      : [];
+
+    // Check for overlap: Does the BM manage any branch that the member's CRO belongs to?
+    const hasAccess = bmBranches.some(bmBranch => memberBranches.includes(bmBranch));
+
+    if (!hasAccess) {
+      return res.status(404).json({
+        error: "Member not found",
+        message: "No member found with the provided search criteria in your branch",
+      });
+    }
     const getBmStatusOfForeclosure = await foreclosure_approval.findOne({
       where: {
         memberId: member.id,
@@ -252,13 +297,12 @@ module.exports = getForeclosureDataForBm = async (req, res) => {
       getBmStatusOfForeclosure &&
       getBmStatusOfForeclosure.accountManagerStatus === "submitted"
     ) {
-      const getBranchId = await manager_credentials.findOne({
-        where: { id: manager_id },
-        attributes: ["branchId"],
-      });
+      const branchIdToFetch = memberFieldManager.branchId
+        ? memberFieldManager.branchId.split(",")[0].trim()
+        : loggedInManager.branchId.split(",")[0].trim();
 
       const getBranchName = await branch.findOne({
-        where: { id: getBranchId.branchId },
+        where: { id: branchIdToFetch },
         attributes: ["branchName"],
       });
       return res.json({
@@ -352,6 +396,7 @@ module.exports = getForeclosureDataForBm = async (req, res) => {
         memberId: member.id || "",
         memberName: member.memberName || "",
         outstandingPrincipal: totalOutstandingPrincipal || 0,
+        securityDeposit: member.securityDeposit || 0,
       },
     });
   } catch (error) {

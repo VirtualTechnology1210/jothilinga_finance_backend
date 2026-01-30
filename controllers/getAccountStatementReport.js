@@ -1,4 +1,3 @@
-const { JSON } = require("sequelize");
 const {
   member_details,
   proposed_loan_details,
@@ -7,6 +6,8 @@ const {
   receipts,
   emi_charts,
   roles,
+  foreclosure_approval,
+  foreclosure_denominations,
   sequelize,
 } = require("../models");
 
@@ -16,7 +17,6 @@ module.exports = getAccountStatementReport = async (req, res) => {
   const applicationId = req.params.applicationId;
 
   try {
-    // Your existing code (unchanged)
     const member = await member_details.findOne({
       where: {
         [Op.or]: [
@@ -24,7 +24,6 @@ module.exports = getAccountStatementReport = async (req, res) => {
           { customerId: applicationId }
         ]
       },
-
       include: [
         {
           model: proposed_loan_details,
@@ -33,6 +32,16 @@ module.exports = getAccountStatementReport = async (req, res) => {
         {
           model: receipts,
           as: "receiptsDetails",
+        },
+        {
+          model: foreclosure_approval,
+          as: "fk_member_details_hasOne_member_foreclosure_approval_memberId",
+          include: [
+            {
+              model: foreclosure_denominations,
+              as: "fk_foreclosure_approval_hasMany_foreclosure_denominations_foreclosureId",
+            },
+          ],
         },
       ],
     });
@@ -71,7 +80,7 @@ module.exports = getAccountStatementReport = async (req, res) => {
 
           if (!allowedBranchIds.includes(memberBranchId)) {
             return res.json({
-              error: "You are not authorized to access this branch’s customer data.",
+              error: "You are not authorized to access this branch's customer data.",
             });
           }
         }
@@ -82,82 +91,106 @@ module.exports = getAccountStatementReport = async (req, res) => {
       where: { id: getBranchId.branchId },
     });
 
-
     if (!getBranchName) {
       return res.json({
         error: `No branch found with id: ${getBranchId.branchId}`,
       });
     }
 
-
-
-
     const emiChartRecord = await emi_charts.findOne({
       where: { memberId: member.id }
     });
 
-
     const allReceipts = await receipts.findAll({
       where: { memberId: member.id }
     });
-
 
     let totalEmiPaid = 0;
     let totalPrincipalPaid = 0;
     let totalInterestPaid = 0;
     let lastPaidMonth = 0;
 
-
     if (emiChartRecord && emiChartRecord.emiChart) {
-      // let emiChartArray = JSON.parse(emiChartRecord.emiChart);
-      let emiChartArray = emiChartRecord.emiChart;
+      // Handle both JSON string and object cases using global JSON
+      let emiChartArray = [];
 
-      emiChartArray.sort((a, b) => a.month - b.month);
+      try {
+        if (typeof emiChartRecord.emiChart === 'string') {
+          emiChartArray = global.JSON.parse(emiChartRecord.emiChart);
+        } else if (Array.isArray(emiChartRecord.emiChart)) {
+          emiChartArray = emiChartRecord.emiChart;
+        } else if (typeof emiChartRecord.emiChart === 'object') {
+          // It might be an object, try to use it directly or convert
+          emiChartArray = Object.values(emiChartRecord.emiChart);
+        }
+      } catch (e) {
+        console.log("Error parsing emiChart:", e.message);
+        emiChartArray = [];
+      }
 
+      // Only sort if it's a valid array
+      if (Array.isArray(emiChartArray) && emiChartArray.length > 0) {
+        emiChartArray.sort((a, b) => (a.month || 0) - (b.month || 0));
 
-      for (let monthData of emiChartArray) {
+        for (let monthData of emiChartArray) {
+          const emiDate = new Date(monthData.emiDate);
 
+          const matchingReceipt = allReceipts.find(receipt => {
+            const receiptDate = new Date(receipt.emiDate);
+            return (
+              receiptDate.getFullYear() === emiDate.getFullYear() &&
+              receiptDate.getMonth() === emiDate.getMonth()
+            );
+          });
 
-        const emiDate = new Date(monthData.emiDate);
-
-
-        const matchingReceipt = allReceipts.find(receipt => {
-          const receiptDate = new Date(receipt.emiDate);
-
-
-          return (
-            receiptDate.getFullYear() === emiDate.getFullYear() &&
-            receiptDate.getMonth() === emiDate.getMonth()
-          );
-
-
-        });
-
-
-        if (matchingReceipt && matchingReceipt.status === "paid") {
-
-
-          if (monthData.month === lastPaidMonth + 1) {
-
-
-            totalEmiPaid += monthData.emiAmount;
-            totalPrincipalPaid += monthData.principalAmount;
-            totalInterestPaid += monthData.interestAmount;
-
-
-            lastPaidMonth = monthData.month;
-
+          if (matchingReceipt && matchingReceipt.status === "paid") {
+            if (monthData.month === lastPaidMonth + 1) {
+              totalEmiPaid += monthData.emiAmount || 0;
+              totalPrincipalPaid += monthData.principalAmount || 0;
+              totalInterestPaid += monthData.interestAmount || 0;
+              lastPaidMonth = monthData.month;
+            } else {
+              break;
+            }
           } else {
-            // If there's a gap (like Month 2 pending, Month 3 paid), stop counting
             break;
           }
-        } else {
-          // If current month is not paid, stop counting
-          break;
         }
       }
     }
 
+    // Prepare foreclosure details if the loan is foreclosed
+    let foreclosureDetails = null;
+    if (member.loanStatus === "foreclosed" || member.loanStatus === "completed") {
+      const foreclosureData = member.fk_member_details_hasOne_member_foreclosure_approval_memberId;
+      if (foreclosureData) {
+        // Get denominations
+        const denominations = foreclosureData.fk_foreclosure_approval_hasMany_foreclosure_denominations_foreclosureId || [];
+
+        foreclosureDetails = {
+          foreclosureDate: member.loanCloseDate,
+          loanClosureId: member.loanClosureId,
+          totalOutstandingAmount: foreclosureData.totalOutstandingAmount,
+          forecloseChargesPercentage: foreclosureData.forecloseChargesPercentage,
+          forecloseChargesAmount: foreclosureData.forecloseChargesAmount,
+          forecloseGstAmount: foreclosureData.forecloseGstAmount,
+          totalPayableAmount: foreclosureData.totalPayableAmount,
+          // Use explicit null check - 0 is a valid value, don't fallback when it's 0
+          securityDeposit: foreclosureData.securityDeposit !== null && foreclosureData.securityDeposit !== undefined
+            ? foreclosureData.securityDeposit
+            : (member.securityDeposit || 0),
+          netPayableAmount: foreclosureData.netPayableAmount !== null && foreclosureData.netPayableAmount !== undefined
+            ? foreclosureData.netPayableAmount
+            : foreclosureData.totalPayableAmount,
+          reason: foreclosureData.reason,
+          denominations: denominations.map(d => ({
+            denomination: d.denomination,
+            count: d.count,
+            total: d.total,
+          })),
+        };
+      }
+    }
 
     const response = {
       memberDetails: member.get(),
@@ -166,7 +199,12 @@ module.exports = getAccountStatementReport = async (req, res) => {
 
       cumulativeEmiPaid: totalEmiPaid,
       cumulativePrincipalPaid: totalPrincipalPaid,
-      cumulativeInterestPaid: totalInterestPaid
+      cumulativeInterestPaid: totalInterestPaid,
+
+      // Add foreclosure details
+      isForeclosed: member.loanStatus === "foreclosed",
+      isCompleted: member.loanStatus === "completed",
+      foreclosureDetails: foreclosureDetails,
     };
 
     res.json({ message: response });

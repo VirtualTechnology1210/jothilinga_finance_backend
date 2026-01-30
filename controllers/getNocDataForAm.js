@@ -15,11 +15,18 @@ module.exports = getNocDataForAm = async (req, res) => {
   try {
     const { searchType, searchValue, role, manager_id } = req.query;
 
-    // Check if role is Branch Manager
-    if (role !== "Accounts Manager") {
+    // Allow only specific roles
+    if (!role || !["Accounts Manager", "superadmin"].includes(role)) {
       return res.status(403).json({
         error: "Access Denied",
-        message: "Only Accounts Managers can access this data",
+        message: "Only Accounts Managers and superadmin can access this data",
+      });
+    }
+
+    // For Accounts Manager we require manager_id (to enforce branch restriction)
+    if (role === "Accounts Manager" && !manager_id) {
+      return res.status(400).json({
+        error: "Manager Id is required",
       });
     }
 
@@ -49,17 +56,24 @@ module.exports = getNocDataForAm = async (req, res) => {
         });
     }
 
-    const getBranchId = await manager_credentials.findOne({
-      where: { id: manager_id },
-      attributes: ["branchId"],
-    });
+    let managerBranchId = null;
+    if (role === "Accounts Manager") {
+      const managerRecord = await manager_credentials.findOne({
+        where: { id: manager_id },
+        attributes: ["branchId"],
+      });
 
-    const getBranchName = await branch.findOne({
-      where: { id: getBranchId.branchId },
-      attributes: ["branchName"],
-    });
+      if (!managerRecord || !managerRecord.branchId) {
+        return res.status(400).json({
+          error: "Invalid manager_id",
+          message: "Manager branch information not found",
+        });
+      }
 
-    // Find members based on the search condition
+      managerBranchId = managerRecord.branchId;
+    }
+
+    // Find member based on the search condition
     const member = await member_details.findOne({
       where: {
         ...whereCondition,
@@ -81,9 +95,37 @@ module.exports = getNocDataForAm = async (req, res) => {
       });
     }
 
+    // Get member's CRO branch
+    const memberCro = await manager_credentials.findOne({
+      where: { id: member.fieldManagerId },
+      attributes: ["branchId"],
+    });
+
+    // If Accounts Manager, ensure member belongs to same branch
+    if (
+      role === "Accounts Manager" &&
+      (!memberCro || memberCro.branchId !== managerBranchId)
+    ) {
+      return res.status(404).json({
+        error: "Member not applicable for NOC",
+        message:
+          "No member found with the provided search criteria for your branch",
+      });
+    }
+
+    // Derive branch name from member's CRO branch
+    let branchName = null;
+    if (memberCro && memberCro.branchId) {
+      const branchRecord = await branch.findOne({
+        where: { id: memberCro.branchId },
+        attributes: ["branchName"],
+      });
+      branchName = branchRecord ? branchRecord.branchName : null;
+    }
+
     res.json({
       success: "NOC data retrieved successfully",
-      branchName: getBranchName.branchName,
+      branchName,
       member: member,
     });
   } catch (error) {

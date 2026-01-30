@@ -27,6 +27,7 @@ module.exports = getJlgOutstandingReportData = async (req, res) => {
       where: {
         loanType: "JLG Loan",
         branchManagerStatus: "disbursed",
+        loanStatus: { [Op.notIn]: ["foreclosed", "completed"] }, // Exclude foreclosed and completed loans
         fieldManagerId: {
           [Op.in]: fieldManagerIds, // Filter by IDs
         },

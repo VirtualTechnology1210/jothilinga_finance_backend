@@ -28,7 +28,7 @@ const sendSms = async (req, res) => {
     console.log('Formatted phone number:', formattedPhoneNumber);
 
     // const apiKey = `UcsnzGQ3lM7hVg8v`;
-    const apiKey = `UcsnzGQ3lM7hVg8v`;
+    const apiKey = ``;
     const senderId = `JLFSPL`;
     // const senderId = `TXTSPD`;
     // const template = `1707161518728583364`;
