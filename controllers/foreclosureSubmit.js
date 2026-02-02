@@ -29,6 +29,8 @@ module.exports = foreclosureSubmit = async (req, res) => {
             reason: foreClosureData.reason,
             branchManagerStatus: "submitted",
             branchManagerStatusUpdatedAt: new Date().toISOString(),
+            accountManagerStatusUpdatedAt: new Date().toISOString(),
+            accountManagerStatus: "submitted",
             securityDeposit: foreClosureData.securityDeposit,
             netPayableAmount: foreClosureData.netPayableAmount,
           },
