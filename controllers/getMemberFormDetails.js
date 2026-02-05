@@ -289,7 +289,7 @@ module.exports = getMemberFormDetails = async (req, res) => {
           as: "creditOfficerVerificationDataDetails", // Ensure this alias matches the association alias
         },
         {
-          model:emi_charts,
+          model: emi_charts,
           as: "fk_member_details_hasMany_emi_charts_memberId",
         },
         {
@@ -405,55 +405,55 @@ module.exports = getMemberFormDetails = async (req, res) => {
     // };
 
     const response = {
-  memberDetails: member.get(),
-  branchName: getBranchName.branchName,
-  managerName: getBranchId.username,
-  coApplicantDetails: member.familyMember
-    ? member.familyMember.get()
-    : null,
-  businessDetails: member.businessDetails
-    ? member.businessDetails.get()
-    : null,
-  familyBusinessDetails: member.familyBusinessDetails
-    ? member.familyBusinessDetails.get()
-    : null,
-  loanDetails: member.loanDetails ? member.loanDetails.get() : null,
-  proposedLoanDetails: member.proposedLoanDetails
-    ? member.proposedLoanDetails.get()
-    : null,
-  bankDetails: member.bankDetails ? member.bankDetails.get() : null,
-  memberDocuments: member.memberPhotoDetails
-    ? member.memberPhotoDetails.get()
-    : null,
-  nomineeDocuments: member.nomineePhotoDetails
-    ? member.nomineePhotoDetails.get()
-    : null,
-  creditDocuments: member.creditDocumentsDetails
-    ? member.creditDocumentsDetails.get()
-    : null,
-  branchManagerVerificationPhotosDetails:
-    member.branchManagerVerificationPhotosDetails || [],
-  branchManagerVerificationPhotosStaticDetails:
-    member.branchManagerVerificationPhotosStaticDetails
-      ? member.branchManagerVerificationPhotosStaticDetails.get()
-      : null,
-  creditOfficerVerificationPhotosStaticDetails:
-    member.creditOfficerVerificationPhotosStaticDetails
-      ? member.creditOfficerVerificationPhotosStaticDetails.get()
-      : null,
-  creditOfficerVerificationDataDetails:
-    member.creditOfficerVerificationDataDetails || [],
-  center: getCenterData,
-  bookingProcessDetails:
-    member.fk_member_details_hasOne_booking_process_bm_memberId
-      ? member.fk_member_details_hasOne_booking_process_bm_memberId.get()
-      : null,
-  denominations: member.fk_member_details_hasOne_booking_process_bm_memberId
-    ? member.fk_member_details_hasOne_booking_process_bm_memberId
-        .fk_booking_process_bm_hasMany_booking_process_denominations_bookingProcessId
-    : [],
-  emiCharts: member.fk_member_details_hasMany_emi_charts_memberId || [],
-};
+      memberDetails: member.get(),
+      branchName: getBranchName.branchName,
+      managerName: getBranchId.username,
+      coApplicantDetails: member.familyMember
+        ? member.familyMember.get()
+        : null,
+      businessDetails: member.businessDetails
+        ? member.businessDetails.get()
+        : null,
+      familyBusinessDetails: member.familyBusinessDetails
+        ? member.familyBusinessDetails.get()
+        : null,
+      loanDetails: member.loanDetails ? member.loanDetails.get() : null,
+      proposedLoanDetails: member.proposedLoanDetails
+        ? member.proposedLoanDetails.get()
+        : null,
+      bankDetails: member.bankDetails ? member.bankDetails.get() : null,
+      memberDocuments: member.memberPhotoDetails
+        ? member.memberPhotoDetails.get()
+        : null,
+      nomineeDocuments: member.nomineePhotoDetails
+        ? member.nomineePhotoDetails.get()
+        : null,
+      creditDocuments: member.creditDocumentsDetails
+        ? member.creditDocumentsDetails.get()
+        : null,
+      branchManagerVerificationPhotosDetails:
+        member.branchManagerVerificationPhotosDetails || [],
+      branchManagerVerificationPhotosStaticDetails:
+        member.branchManagerVerificationPhotosStaticDetails
+          ? member.branchManagerVerificationPhotosStaticDetails.get()
+          : null,
+      creditOfficerVerificationPhotosStaticDetails:
+        member.creditOfficerVerificationPhotosStaticDetails
+          ? member.creditOfficerVerificationPhotosStaticDetails.get()
+          : null,
+      creditOfficerVerificationDataDetails:
+        member.creditOfficerVerificationDataDetails || [],
+      center: getCenterData,
+      bookingProcessDetails:
+        member.fk_member_details_hasOne_booking_process_bm_memberId
+          ? member.fk_member_details_hasOne_booking_process_bm_memberId.get()
+          : null,
+      denominations: member.fk_member_details_hasOne_booking_process_bm_memberId
+        ? member.fk_member_details_hasOne_booking_process_bm_memberId
+          .fk_booking_process_bm_hasMany_booking_process_denominations_bookingProcessId
+        : [],
+      emiCharts: member.fk_member_details_hasMany_emi_charts_memberId || [],
+    };
 
 
     res.status(200).json(response);

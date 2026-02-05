@@ -140,7 +140,7 @@ module.exports = addDetails = async (req, res) => {
               await models.member_details.update(
                 {
                   loanStatus: "completed",
-                  loanCloseDate: new Date().toISOString,
+                  loanCloseDate: new Date().toISOString(),
                 },
                 {
                   where: { id: memberDetails.id },
@@ -210,7 +210,7 @@ module.exports = addDetails = async (req, res) => {
                 await models.member_details.update(
                   {
                     loanStatus: "completed",
-                    loanCloseDate: new Date().toISOString,
+                    loanCloseDate: new Date().toISOString(),
                   },
                   {
                     where: { id: memberDetails.id },
@@ -240,7 +240,7 @@ module.exports = addDetails = async (req, res) => {
         await models.member_details.update(
           {
             loanStatus: "foreclosed",
-            loanCloseDate: new Date().toISOString,
+            loanCloseDate: new Date().toISOString(),
             loanClosureId: getLoanClosureId.nextNumber,
           },
           {
@@ -249,7 +249,7 @@ module.exports = addDetails = async (req, res) => {
           }
         );
         await models.series.update(
-          { nextNumber: nextNumber + 1 },
+          { nextNumber: getLoanClosureId.nextNumber + 1 },
           { where: { seriesName: "loanClosureId" }, transaction }
         );
       }

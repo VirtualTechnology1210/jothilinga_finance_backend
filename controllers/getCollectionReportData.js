@@ -12,7 +12,7 @@ const getFieldManagerRecords = require("./utils/getFieldManagerRecords");
 
 module.exports = getCollectionReportData = async (req, res) => {
   try {
-    const { id } = req.query;
+    const { id, fromDate, toDate } = req.query;
 
     if (!id) {
       return res.status(400).json({ error: "ID is required" });
@@ -22,6 +22,19 @@ module.exports = getCollectionReportData = async (req, res) => {
     const fieldManagerIds = await getFieldManagerRecords({
       userId: id,
     });
+
+    // Construct receipt where clause if dates are provided
+    const receiptWhere = {};
+    if (fromDate && toDate) {
+      const fromDateStart = new Date(fromDate);
+      fromDateStart.setHours(0, 0, 0, 0);
+      const toDateEnd = new Date(toDate);
+      toDateEnd.setHours(23, 59, 59, 999);
+
+      receiptWhere.collectedDate = {
+        [Op.between]: [fromDateStart, toDateEnd],
+      };
+    }
 
     // Step 1: Fetch collection report data with proposed loan details and EMI charts
     const collectionReportData = await member_details.findAll({
@@ -44,6 +57,8 @@ module.exports = getCollectionReportData = async (req, res) => {
         {
           model: receipts,
           as: "receiptsDetails",
+          where: Object.keys(receiptWhere).length > 0 ? receiptWhere : undefined,
+          required: Object.keys(receiptWhere).length > 0, // Make it an inner join if filtering by date
           include: [
             {
               model: bl_collection_approval,

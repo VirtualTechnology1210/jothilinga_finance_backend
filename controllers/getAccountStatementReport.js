@@ -168,14 +168,17 @@ module.exports = getAccountStatementReport = async (req, res) => {
         const denominations = foreclosureData.fk_foreclosure_approval_hasMany_foreclosure_denominations_foreclosureId || [];
 
         foreclosureDetails = {
-          foreclosureDate: member.loanCloseDate,
-          loanClosureId: member.loanClosureId,
+          foreclosureDate: member.loanCloseDate ||
+            foreclosureData.branchManagerStatusUpdatedAt ||
+            foreclosureData.accountManagerStatusUpdatedAt ||
+            foreclosureData.updatedAt ||
+            foreclosureData.createdAt,
+          loanClosureId: member.loanClosureId || foreclosureData.id,
           totalOutstandingAmount: foreclosureData.totalOutstandingAmount,
           forecloseChargesPercentage: foreclosureData.forecloseChargesPercentage,
           forecloseChargesAmount: foreclosureData.forecloseChargesAmount,
           forecloseGstAmount: foreclosureData.forecloseGstAmount,
           totalPayableAmount: foreclosureData.totalPayableAmount,
-          // Use explicit null check - 0 is a valid value, don't fallback when it's 0
           securityDeposit: foreclosureData.securityDeposit !== null && foreclosureData.securityDeposit !== undefined
             ? foreclosureData.securityDeposit
             : (member.securityDeposit || 0),
