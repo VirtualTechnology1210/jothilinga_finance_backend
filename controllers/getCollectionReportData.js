@@ -229,9 +229,14 @@ module.exports = getCollectionReportData = async (req, res) => {
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
+    // Deduplicate collectionReportData based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(collectionReportData.map((loan) => [loan.id, loan])).values()
+    );
+
     // Step 3: Combine the data
     const combinedData = [];
-    collectionReportData.forEach((loan) => {
+    uniqueLoanDetails.forEach((loan) => {
       const managerBranch =
         managerAndBranchData.find(
           (mb) => mb.fieldManagerId === loan.fieldManagerId

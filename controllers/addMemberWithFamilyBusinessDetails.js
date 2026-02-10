@@ -22,14 +22,36 @@ module.exports = addMemberWithFamilyBusinessDetails = async (req, res) => {
     for (const data of formData) {
       if (data.ApplicantId) {
         // If ApplicantId exists, add to member_business_details
-        const newBusinessDetails = await member_business_details.create(
-          { ...data },
-          { transaction }
-        );
-        memberId = newBusinessDetails.ApplicantId;
-      } else if (data.familyMemberId && data.memberId) {
-        // If familyMemberId and memberId exist, add to family_business_details
-        await family_business_details.create({ ...data }, { transaction });
+        const existing = await member_business_details.findOne({
+          where: { ApplicantId: data.ApplicantId },
+          transaction
+        });
+        if (existing) {
+          await member_business_details.update(
+            { ...data },
+            { where: { ApplicantId: data.ApplicantId }, transaction }
+          );
+        } else {
+          await member_business_details.create({ ...data }, { transaction });
+        }
+        memberId = data.ApplicantId;
+      } else if (data.memberId) {
+        // If memberId exist, add to family_business_details
+        if (!data.familyMemberId) {
+          throw new Error("Family Member ID is missing.");
+        }
+        const existing = await family_business_details.findOne({
+          where: { memberId: data.memberId },
+          transaction,
+        });
+        if (existing) {
+          await family_business_details.update(
+            { ...data },
+            { where: { memberId: data.memberId }, transaction }
+          );
+        } else {
+          await family_business_details.create({ ...data }, { transaction });
+        }
       }
     }
 

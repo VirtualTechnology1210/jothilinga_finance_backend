@@ -242,8 +242,13 @@ module.exports = getDemandVsCollectionReportData = async (req, res) => {
     const loanCycleMap = {};
     const reportData = [];
 
+    // Deduplicate loanDetails based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(loanDetails.map((loan) => [loan.id, loan])).values()
+    );
+
     // Process each loan to generate month-wise data
-    loanDetails.forEach((loan) => {
+    uniqueLoanDetails.forEach((loan) => {
       const managerBranch = managerAndBranchData.find(
         (mb) => mb.fieldManagerId === loan.fieldManagerId
       ) || {};

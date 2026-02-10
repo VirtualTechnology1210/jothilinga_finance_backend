@@ -30,7 +30,7 @@ module.exports = getClientProspectReportData = async (req, res) => {
         creditManagerStatus: { [Op.not]: "rejected" },
         sanctionCommitteeStatus: { [Op.not]: "rejected" },
         fieldManagerId: {
-          [Op.in]: fieldManagerIds, 
+          [Op.in]: fieldManagerIds,
         },
       },
       include: [
@@ -74,8 +74,13 @@ module.exports = getClientProspectReportData = async (req, res) => {
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
+    // Deduplicate loanDetails based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(loanDetails.map((loan) => [loan.id, loan])).values()
+    );
+
     // Combine the Sequelize ORM data and raw SQL data, adding loan cycle information
-    const combinedData = loanDetails.map((loan) => {
+    const combinedData = uniqueLoanDetails.map((loan) => {
       // Find the corresponding manager and branch data based on fieldManagerId
       const managerBranch =
         managerAndBranchData.find(

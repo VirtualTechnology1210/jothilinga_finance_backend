@@ -468,7 +468,12 @@ module.exports = getFutureDemandReportData = async (req, res) => {
     const loanCycleMap = {};
     let combinedData = [];
 
-    futureDemandReportData.forEach((loan) => {
+    // Deduplicate futureDemandReportData based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(futureDemandReportData.map((loan) => [loan.id, loan])).values()
+    );
+
+    uniqueLoanDetails.forEach((loan) => {
       const managerBranch = managerAndBranchData.find(
         (mb) => mb.fieldManagerId === loan.fieldManagerId
       ) || {};

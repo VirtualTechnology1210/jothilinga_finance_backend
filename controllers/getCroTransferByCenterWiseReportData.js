@@ -65,9 +65,9 @@ module.exports = getCroTransferByCenterWiseReportData = async (req, res) => {
 
     // Add this check before the SQL query
     if (!validFieldManagerIds || validFieldManagerIds.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: "No valid field manager IDs found",
-        data: [] 
+        data: []
       });
     }
 

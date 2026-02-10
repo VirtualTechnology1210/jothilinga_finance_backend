@@ -116,7 +116,7 @@ module.exports = getMasterReportData = async (req, res) => {
 
       emiChartsData.forEach((row) => {
         try {
-          console.log(`Processing EMI chart for loan ${ row.memberId }, type: ${typeof row.emiChart}`);
+          console.log(`Processing EMI chart for loan ${row.memberId}, type: ${typeof row.emiChart}`);
           const parsedEmiChart =
             typeof row.emiChart === "string"
               ? JSON.parse(row.emiChart)
@@ -139,13 +139,13 @@ module.exports = getMasterReportData = async (req, res) => {
 
     if (loanIdsArray.length > 0) {
 
-      const receiptsData = await receipts.findAll({ 
+      const receiptsData = await receipts.findAll({
         where: {
           memberId: { [Op.in]: loanIdsArray },
         },
         attributes: [
           "memberId",
-          [sequelize.cast( sequelize.col("status")), "status"],
+          [sequelize.cast(sequelize.col("status")), "status"],
         ],
       });
 
@@ -164,9 +164,9 @@ module.exports = getMasterReportData = async (req, res) => {
           });
         }
 
-    });
+      });
 
-  }
+    }
 
     // Helper function to generate EMI dates within a range
     const generateEmiDatesInRange = (
@@ -222,7 +222,7 @@ module.exports = getMasterReportData = async (req, res) => {
       return monthsDiff;
     };
 
-  
+
 
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
@@ -347,12 +347,12 @@ module.exports = getMasterReportData = async (req, res) => {
         const emiDataArray =
           totalEmiAmount > 0
             ? [
-                {
-                  emiAmount: totalEmiAmount,
-                  emiDate: null,
-                  outstandingBalance: currentOutstandingBalance,
-                },
-              ]
+              {
+                emiAmount: totalEmiAmount,
+                emiDate: null,
+                outstandingBalance: currentOutstandingBalance,
+              },
+            ]
             : [];
 
         combinedData.push({

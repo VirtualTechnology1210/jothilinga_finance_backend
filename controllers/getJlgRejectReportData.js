@@ -78,8 +78,13 @@ module.exports = getJlgRejectReportData = async (req, res) => {
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
+    // Deduplicate rejectReportData based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(rejectReportData.map((loan) => [loan.id, loan])).values()
+    );
+
     // Step 3: Combine the data
-    const combinedData = rejectReportData.map((loan) => {
+    const combinedData = uniqueLoanDetails.map((loan) => {
       const managerBranch =
         managerAndBranchData.find(
           (mb) => mb.fieldManagerId === loan.fieldManagerId

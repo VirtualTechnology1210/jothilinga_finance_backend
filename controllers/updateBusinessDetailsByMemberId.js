@@ -20,17 +20,34 @@ module.exports = updateBusinessDetailsByMemberId = async (req, res) => {
 
     for (const data of formData) {
       if (data.ApplicantId) {
-        await member_business_details.update(
-          { ...data },
-          { where: { ApplicantId: data.ApplicantId } },
-          { transaction }
-        );
-      } else if (data.familyMemberId && data.memberId) {
-        await family_business_details.update(
-          { ...data },
-          { where: { memberId: data.memberId } },
-          { transaction }
-        );
+        const existing = await member_business_details.findOne({
+          where: { ApplicantId: data.ApplicantId },
+          transaction
+        });
+        if (existing) {
+          await member_business_details.update(
+            { ...data },
+            { where: { ApplicantId: data.ApplicantId }, transaction }
+          );
+        } else {
+          await member_business_details.create({ ...data }, { transaction });
+        }
+      } else if (data.memberId) {
+        if (!data.familyMemberId) {
+          throw new Error("Family Member ID is missing.");
+        }
+        const existing = await family_business_details.findOne({
+          where: { memberId: data.memberId },
+          transaction,
+        });
+        if (existing) {
+          await family_business_details.update(
+            { ...data },
+            { where: { memberId: data.memberId }, transaction }
+          );
+        } else {
+          await family_business_details.create({ ...data }, { transaction });
+        }
       }
     }
 

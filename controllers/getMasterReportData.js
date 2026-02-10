@@ -191,17 +191,17 @@ module.exports = getMasterReportData = async (req, res) => {
       // Since we don't have emiMonth in receipts, we'll determine EMI months based on:
       // 1. Number of paid receipts = number of EMIs paid
       // 2. Payment dates to ensure sequential EMI payments
-      
+
       totalPaidMonths = paidReceipts.length;
 
       // Calculate cumulative amounts based on paid EMIs (sequential from first EMI)
       for (let i = 0; i < totalPaidMonths && i < emiChart.length; i++) {
         const emiData = emiChart[i];
         const receipt = paidReceipts[i];
-        
+
         const principalAmount = parseFloat(emiData.principalAmount || 0);
         const interestAmount = parseFloat(emiData.interestAmount || 0);
-        
+
         cumulativePrincipalPaid += principalAmount;
         cumulativeInterestPaid += interestAmount;
 
@@ -231,20 +231,20 @@ module.exports = getMasterReportData = async (req, res) => {
     const calculateOutstandingAmounts = (loan, emiDetails, cumulativePayments) => {
       // Get total principal disbursed (sanctioned amount)
       const totalPrincipalDisbursed = parseFloat(loan.sanctionedLoanAmountBySanctionCommittee || 0);
-      
+
       // Calculate total interest for the entire loan tenure
       const totalInterestForLoan = emiDetails.reduce((sum, emi) => {
         return sum + parseFloat(emi.interestAmount || 0);
       }, 0);
-      
+
       // Calculate remaining outstanding amounts
       const outstandingPrincipal = totalPrincipalDisbursed - cumulativePayments.cumulativePrincipalPaid;
       const outstandingInterest = totalInterestForLoan - cumulativePayments.cumulativeInterestPaid;
-      
+
       // Ensure values don't go below zero
       const remainingPrincipal = Math.max(0, outstandingPrincipal);
       const remainingInterest = Math.max(0, outstandingInterest);
-      
+
       return {
         totalPrincipalDisbursed,
         totalInterestForLoan,
@@ -252,9 +252,9 @@ module.exports = getMasterReportData = async (req, res) => {
         outstandingInterest: remainingInterest,
         totalOutstanding: remainingPrincipal + remainingInterest,
         // Additional helpful calculations
-        principalPaidPercentage: totalPrincipalDisbursed > 0 ? 
+        principalPaidPercentage: totalPrincipalDisbursed > 0 ?
           (cumulativePayments.cumulativePrincipalPaid / totalPrincipalDisbursed) * 100 : 0,
-        interestPaidPercentage: totalInterestForLoan > 0 ? 
+        interestPaidPercentage: totalInterestForLoan > 0 ?
           (cumulativePayments.cumulativeInterestPaid / totalInterestForLoan) * 100 : 0
       };
     };
@@ -289,11 +289,11 @@ module.exports = getMasterReportData = async (req, res) => {
       // Check each EMI using the actual EMI dates from emiChart
       for (let i = 0; i < emiDetails.length; i++) {
         const emiData = emiDetails[i];
-        
+
         // Use the actual EMI date from the emiChart (should be stored in emiData)
         // The emiChart should contain the exact EMI due date for each month
         let emiDueDate = null;
-        
+
         if (emiData.emiDate) {
           emiDueDate = new Date(emiData.emiDate);
         } else if (emiData.dueDate) {
@@ -307,23 +307,23 @@ module.exports = getMasterReportData = async (req, res) => {
         }
 
         console.log(`EMI ${i + 1}: Due Date = ${emiDueDate.toDateString()}`);
-        
+
         // Check if this EMI is CURRENTLY due and CURRENTLY unpaid
         const isPaid = i < cumulativePayments.totalPaidMonths; // This EMI has been paid
         const isDue = emiDueDate <= currentDate; // This EMI due date has passed
-        
+
         console.log(`EMI ${i + 1}: isPaid = ${isPaid}, isDue = ${isDue}`);
-        
+
         // Only count EMIs that are due but NOT YET PAID
         if (isDue && !isPaid) {
           // This EMI is currently overdue (not paid yet)
           const principalAmount = parseFloat(emiData.principalAmount || 0);
           const interestAmount = parseFloat(emiData.interestAmount || 0);
-          
+
           overduePrincipal += principalAmount;
           overdueInterest += interestAmount;
           overdueEMIs++;
-          
+
           // Set first overdue date for DPD calculation
           if (!firstOverdueDate) {
             firstOverdueDate = new Date(emiDueDate);
@@ -408,7 +408,12 @@ module.exports = getMasterReportData = async (req, res) => {
     // Combine the Sequelize ORM data and raw SQL data, adding loan cycle information
     const combinedData = [];
 
-    loanDetails.map((loan) => {
+    // Deduplicate loanDetails based on loan id to prevent duplicate records
+    const uniqueLoanDetails = Array.from(
+      new Map(loanDetails.map((loan) => [loan.id, loan])).values()
+    );
+
+    uniqueLoanDetails.map((loan) => {
       // Find the corresponding manager and branch data based on fieldManagerId
       const managerBranch =
         managerAndBranchData.find(
@@ -427,9 +432,9 @@ module.exports = getMasterReportData = async (req, res) => {
 
       // Calculate cumulative paid amounts
       const cumulativePayments = calculateCumulativePaidAmounts(
-        loan.id, 
-        emiDetails, 
-        paidReceipts, 
+        loan.id,
+        emiDetails,
+        paidReceipts,
         loan.branchManagerStatusUpdatedAt
       );
 
@@ -456,29 +461,29 @@ module.exports = getMasterReportData = async (req, res) => {
           loan.proposedLoanDetails
             ?.fk_proposed_loan_details_belongsTo_funding_agencies_fundingAgencyId
             ?.agencyName || null,
-        
+
         // Add cumulative payment information
         cumulativePrincipalPaid: cumulativePayments.cumulativePrincipalPaid,
         cumulativeInterestPaid: cumulativePayments.cumulativeInterestPaid,
         totalPaidMonths: cumulativePayments.totalPaidMonths,
         paidEmiDetails: cumulativePayments.paidEmiDetails,
         totalCumulativePaid: cumulativePayments.cumulativePrincipalPaid + cumulativePayments.cumulativeInterestPaid,
-        
+
         // Add outstanding amounts
         totalPrincipalDisbursed: outstandingAmounts.totalPrincipalDisbursed,
         totalInterestForLoan: outstandingAmounts.totalInterestForLoan,
         outstandingPrincipal: outstandingAmounts.outstandingPrincipal,
         outstandingInterest: outstandingAmounts.outstandingInterest,
         totalOutstanding: outstandingAmounts.totalOutstanding,
-        
+
         // Add percentage calculations for better insights
         principalPaidPercentage: Math.round(outstandingAmounts.principalPaidPercentage * 100) / 100,
         interestPaidPercentage: Math.round(outstandingAmounts.interestPaidPercentage * 100) / 100,
-        
+
         // Loan completion percentage
         loanCompletionPercentage: Math.round(
-          ((cumulativePayments.cumulativePrincipalPaid + cumulativePayments.cumulativeInterestPaid) / 
-           (outstandingAmounts.totalPrincipalDisbursed + outstandingAmounts.totalInterestForLoan)) * 100 * 100
+          ((cumulativePayments.cumulativePrincipalPaid + cumulativePayments.cumulativeInterestPaid) /
+            (outstandingAmounts.totalPrincipalDisbursed + outstandingAmounts.totalInterestForLoan)) * 100 * 100
         ) / 100,
 
         // DPD and Overdue information
@@ -489,17 +494,17 @@ module.exports = getMasterReportData = async (req, res) => {
         totalOverdue: dpdAndOverdue.totalOverdue,
         firstOverdueDate: dpdAndOverdue.firstOverdueDate,
         overdueEMIs: dpdAndOverdue.overdueEMIs,
-        
+
         // Loan status based on DPD
-        loanStatus: dpdAndOverdue.dpd === 0 ? "Current" : 
-                    dpdAndOverdue.dpd <= 30 ? "Early Delinquency" :
-                    dpdAndOverdue.dpd <= 90 ? "Delinquency" : "Default"
+        loanStatus: dpdAndOverdue.dpd === 0 ? "Current" :
+          dpdAndOverdue.dpd <= 30 ? "Early Delinquency" :
+            dpdAndOverdue.dpd <= 90 ? "Delinquency" : "Default"
       };
 
       // Always return single record per loan with summary data (no monthly breakdown rows)
       // Calculate additional summary data based on date range if provided
       let summaryData = {};
-      
+
       if (fromDate && toDate) {
         // Calculate EMIs that fall within the date range
         const emiDatesInRange = generateEmiDatesInRange(
@@ -511,7 +516,7 @@ module.exports = getMasterReportData = async (req, res) => {
         );
 
         // Get last paid date
-        const lastPaidDate = cumulativePayments.paidEmiDetails.length > 0 
+        const lastPaidDate = cumulativePayments.paidEmiDetails.length > 0
           ? cumulativePayments.paidEmiDetails[cumulativePayments.paidEmiDetails.length - 1].paymentDate
           : null;
 
@@ -591,27 +596,27 @@ module.exports = getMasterReportData = async (req, res) => {
         includeMonthlyBreakdown: includeMonthlyBreakdown === "true",
         dateRange: fromDate && toDate ? { fromDate, toDate } : null,
         totalRecords: combinedData.length,
-        
+
         // Cumulative payments summary
         totalCumulativePrincipalPaid: combinedData.reduce((sum, loan) => sum + (loan.cumulativePrincipalPaid || 0), 0),
         totalCumulativeInterestPaid: combinedData.reduce((sum, loan) => sum + (loan.cumulativeInterestPaid || 0), 0),
         totalPaidEMIs: combinedData.reduce((sum, loan) => sum + (loan.totalPaidMonths || 0), 0),
-        
+
         // Outstanding amounts summary
         totalOutstandingPrincipal: combinedData.reduce((sum, loan) => sum + (loan.outstandingPrincipal || 0), 0),
         totalOutstandingInterest: combinedData.reduce((sum, loan) => sum + (loan.outstandingInterest || 0), 0),
         totalOutstandingAmount: combinedData.reduce((sum, loan) => sum + (loan.totalOutstanding || 0), 0),
-        
+
         // Portfolio summary
         totalPrincipalDisbursed: combinedData.reduce((sum, loan) => sum + (loan.totalPrincipalDisbursed || 0), 0),
         totalInterestExpected: combinedData.reduce((sum, loan) => sum + (loan.totalInterestForLoan || 0), 0),
-        averageLoanCompletion: combinedData.length > 0 ? 
+        averageLoanCompletion: combinedData.length > 0 ?
           Math.round((combinedData.reduce((sum, loan) => sum + (loan.loanCompletionPercentage || 0), 0) / combinedData.length) * 100) / 100 : 0,
 
         // DPD and Portfolio Quality summaries
         totalOverdueAmount: combinedData.reduce((sum, loan) => sum + (loan.totalOverdue || 0), 0),
         totalOverdueEMIs: combinedData.reduce((sum, loan) => sum + (loan.overdueEMIs || 0), 0),
-        
+
         // Portfolio quality by buckets
         portfolioQuality: {
           current: combinedData.filter(loan => loan.dpd === 0).length,
@@ -621,15 +626,15 @@ module.exports = getMasterReportData = async (req, res) => {
           bucket_91_180: combinedData.filter(loan => loan.bucket === "91-180").length,
           bucket_180_plus: combinedData.filter(loan => loan.bucket === "180+").length
         },
-        
+
         // Average DPD across portfolio
-        averageDPD: combinedData.length > 0 ? 
+        averageDPD: combinedData.length > 0 ?
           Math.round((combinedData.reduce((sum, loan) => sum + (loan.dpd || 0), 0) / combinedData.length) * 100) / 100 : 0,
-        
+
         // Portfolio at Risk (PAR) percentage
         parPercentage: combinedData.reduce((sum, loan) => sum + (loan.totalPrincipalDisbursed || 0), 0) > 0 ?
-          Math.round((combinedData.reduce((sum, loan) => sum + (loan.totalOverdue || 0), 0) / 
-                      combinedData.reduce((sum, loan) => sum + (loan.totalPrincipalDisbursed || 0), 0)) * 100 * 100) / 100 : 0
+          Math.round((combinedData.reduce((sum, loan) => sum + (loan.totalOverdue || 0), 0) /
+            combinedData.reduce((sum, loan) => sum + (loan.totalPrincipalDisbursed || 0), 0)) * 100 * 100) / 100 : 0
       },
     });
 
