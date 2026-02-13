@@ -37,9 +37,12 @@ module.exports = foreclosureSubmit = async (req, res) => {
           { transaction }
         );
 
-        // Update member_details loanStatus to foreclosed
+        // Update member_details loanStatus to foreclosed and set loanCloseDate
         await member_details.update(
-          { loanStatus: "foreclosed" },
+          {
+            loanStatus: "foreclosed",
+            loanCloseDate: new Date().toISOString()
+          },
           { where: { id: foreClosureData.memberId }, transaction }
         );
       } else if (

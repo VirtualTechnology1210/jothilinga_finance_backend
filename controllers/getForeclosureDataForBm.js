@@ -315,80 +315,62 @@ module.exports = getForeclosureDataForBm = async (req, res) => {
     }
     let totalOutstandingPrincipal = 0;
 
+    // Unified Waterfall Calculation for Outstanding Principal
+    const tenure = member.proposedLoanDetails.tenureInMonths;
+    const sanctionedAmount = Math.round(member.sanctionedLoanAmountBySanctionCommittee);
+    const rate = member.proposedLoanDetails.rateOfInterest;
+    const monthlyRate = rate / 12 / 100;
+
+    // Get all EMI dates for the tenure
+    let emiDates = [];
     if (member.loanType === "JLG Loan") {
-      const disbursementDate = member.branchManagerStatusUpdatedAt;
-      const tenure = member.proposedLoanDetails.tenureInMonths;
-      const emiDayOrder =
-        member.fk_member_details_belongsTo_center_centerId?.bmMeetingDayOrder;
-      const formattedCurrentDate = formatDate(new Date());
-      const { emiDates } = getJlgFirstAndLastEmiDates(
-        disbursementDate,
+      const { emiDates: jlgDates } = getJlgFirstAndLastEmiDates(
+        member.branchManagerStatusUpdatedAt,
         tenure,
-        emiDayOrder,
-        formattedCurrentDate
+        member.fk_member_details_belongsTo_center_centerId?.bmMeetingDayOrder,
+        formatDate(new Date())
       );
-      totalOutstandingPrincipal = Math.round(
-        member.sanctionedLoanAmountBySanctionCommittee
-      );
-      const monthlyRate = member.proposedLoanDetails.rateOfInterest / 12 / 100;
-      for (const emiDate of emiDates) {
-        const receiptsForEmiDate = await receipts.findAll({
-          where: {
-            memberId: member.id,
-            emiDate: formatDate(emiDate),
-          },
-        });
-
-        const totalPaidAmount = receiptsForEmiDate.reduce((sum, receipt) => {
-          return sum + receipt.receivedAmount;
-        }, 0);
-        const interestComponent = totalOutstandingPrincipal * monthlyRate;
-        if (totalPaidAmount >= interestComponent) {
-          const principalReduction = Math.min(
-            totalOutstandingPrincipal,
-            Math.round(totalPaidAmount - interestComponent)
-          );
-          totalOutstandingPrincipal -= principalReduction;
-        }
-      }
-    } else if (member.loanType === "Business Loan") {
-      const disbursementDate = member.branchManagerStatusUpdatedAt;
-      const tenure = member.proposedLoanDetails.tenureInMonths;
-      const emiDay = member.emiDateByBranchManager;
-      const formattedCurrentDate = formatDate(new Date());
-      // In the Business Loan section, update the function call:
-      const emiDates = getBlFirstAndLastEmiDates(
-        disbursementDate,
+      emiDates = jlgDates;
+    } else {
+      const dates = getBlFirstAndLastEmiDates(
+        member.branchManagerStatusUpdatedAt,
         tenure,
-        emiDay,
-        formattedCurrentDate
+        member.emiDateByBranchManager,
+        formatDate(new Date())
       );
-      totalOutstandingPrincipal = Math.round(
-        member.sanctionedLoanAmountBySanctionCommittee
-      );
-      console.log("emiDates: " + emiDates);
-      const monthlyRate = member.proposedLoanDetails.rateOfInterest / 12 / 100;
-      for (const emiDate of emiDates) {
-        const receiptsForEmiDate = await receipts.findAll({
-          where: {
-            memberId: member.id,
-            emiDate: formatDate(new Date(emiDate)),
-          },
-        });
+      emiDates = dates;
+    }
 
-        const totalPaidAmount = receiptsForEmiDate.reduce((sum, receipt) => {
-          return sum + receipt.receivedAmount;
-        }, 0);
-        const interestComponent = totalOutstandingPrincipal * monthlyRate;
-        if (totalPaidAmount >= interestComponent) {
-          const principalReduction = Math.min(
-            totalOutstandingPrincipal,
-            Math.round(totalPaidAmount - interestComponent)
-          );
-          totalOutstandingPrincipal -= principalReduction;
-        }
+    // Sum ALL receipts for this member
+    const allReceipts = await receipts.findAll({
+      where: {
+        memberId: member.id,
+        status: { [Op.in]: ["Paid", "paid", "Pending", "pending"] }
+      },
+    });
+
+    let remainingCash = allReceipts.reduce((sum, r) => sum + (r.receivedAmount || 0), 0);
+    let currentOutstandingPrincipal = sanctionedAmount;
+
+    // Emi Amount Calculation
+    const emiAmount = Math.round(
+      (sanctionedAmount * monthlyRate * Math.pow(1 + monthlyRate, tenure)) /
+      (Math.pow(1 + monthlyRate, tenure) - 1)
+    );
+
+    // Waterfall reconciliation
+    for (let i = 0; i < emiDates.length; i++) {
+      const interestComponent = Math.round(currentOutstandingPrincipal * monthlyRate);
+      const paidForThisEmi = Math.min(remainingCash, emiAmount);
+      remainingCash -= paidForThisEmi;
+
+      if (paidForThisEmi >= interestComponent) {
+        const principalPaid = paidForThisEmi - interestComponent;
+        currentOutstandingPrincipal -= principalPaid;
       }
     }
+
+    totalOutstandingPrincipal = Math.max(0, currentOutstandingPrincipal);
 
     res.json({
       success: "Foreclosure data retrieved successfully",

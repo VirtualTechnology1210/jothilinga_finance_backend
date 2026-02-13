@@ -92,10 +92,12 @@ module.exports = getCollectionReportData = async (req, res) => {
       {
         type: sequelize.QueryTypes.SELECT,
         replacements: {
-          fieldManagerIds: fieldManagerIds,
+          fieldManagerIds: fieldManagerIds.length > 0 ? fieldManagerIds : [0],
         },
       }
     );
+
+    const managerMap = new Map(managerAndBranchData.map(mb => [mb.fieldManagerId, mb]));
 
     const formatDate = (dateValue) => {
       if (!dateValue) return null;
@@ -136,8 +138,8 @@ module.exports = getCollectionReportData = async (req, res) => {
       }
     };
 
-    // Helper function to get EMI details for a specific EMI date
-    const getEmiDetailsForDate = (emiChartData, emiDate, disbursementDate) => {
+    // Helper function to get EMI details for a specific EMI date from a pre-parsed chart
+    const getEmiDetailsForDate = (emiChart, emiDate, disbursementDate) => {
       // Calculate EMI month from dates as fallback (this always works)
       const calculatedEmiMonth = calculateEmiMonthFromDates(disbursementDate, emiDate);
 
@@ -147,20 +149,11 @@ module.exports = getCollectionReportData = async (req, res) => {
       }
 
       // If no EMI chart data, return with calculated month
-      if (!emiChartData) {
+      if (!Array.isArray(emiChart) || emiChart.length === 0) {
         return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
       }
 
       try {
-        // Parse the emiChart JSON data
-        const emiChart = typeof emiChartData === 'string'
-          ? JSON.parse(emiChartData)
-          : emiChartData;
-
-        if (!Array.isArray(emiChart) || emiChart.length === 0) {
-          return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
-        }
-
         const formattedReceiptDate = formatDate(emiDate);
 
         // Find the EMI entry that matches the receipt's EMI date
@@ -186,20 +179,19 @@ module.exports = getCollectionReportData = async (req, res) => {
 
         // If still not found, try day matching
         if (!emiEntry && emiChart.length > 0) {
-          const receiptDay = new Date(emiDate).getDate();
+          const receiptDateObj = new Date(emiDate);
+          const receiptDay = receiptDateObj.getDate();
+          const receiptMonth = receiptDateObj.getMonth();
+          const receiptYear = receiptDateObj.getFullYear();
+
           for (let i = 0; i < emiChart.length; i++) {
             const entryDate = new Date(emiChart[i].emiDate);
-            if (entryDate.getDate() === receiptDay) {
-              const receiptMonth = new Date(emiDate).getMonth();
-              const entryMonth = entryDate.getMonth();
-              const receiptYear = new Date(emiDate).getFullYear();
-              const entryYear = entryDate.getFullYear();
-
-              if (receiptMonth === entryMonth && receiptYear === entryYear) {
-                emiEntry = emiChart[i];
-                matchIndex = i;
-                break;
-              }
+            if (entryDate.getDate() === receiptDay &&
+              entryDate.getMonth() === receiptMonth &&
+              entryDate.getFullYear() === receiptYear) {
+              emiEntry = emiChart[i];
+              matchIndex = i;
+              break;
             }
           }
         }
@@ -212,15 +204,13 @@ module.exports = getCollectionReportData = async (req, res) => {
           finalEmiMonth = matchIndex + 1;
         }
 
-        const result = {
+        return {
           principalAmount: emiEntry ? emiEntry.principalAmount : null,
           interestAmount: emiEntry ? emiEntry.interestAmount : null,
           emiMonth: finalEmiMonth
         };
-
-        return result;
       } catch (error) {
-        console.error('Error parsing EMI chart data:', error);
+        console.error('Error fetching EMI details for date:', error);
         return { principalAmount: null, interestAmount: null, emiMonth: calculatedEmiMonth };
       }
     };
@@ -229,56 +219,63 @@ module.exports = getCollectionReportData = async (req, res) => {
     // Prepare a map to track loan cycles per customerId
     const loanCycleMap = {};
 
-    // Deduplicate collectionReportData based on loan id to prevent duplicate records
-    const uniqueLoanDetails = Array.from(
+    // Deduplicate collectionReportData instances first
+    const uniqueLoanInstances = Array.from(
       new Map(collectionReportData.map((loan) => [loan.id, loan])).values()
     );
 
     // Step 3: Combine the data
     const combinedData = [];
-    uniqueLoanDetails.forEach((loan) => {
-      const managerBranch =
-        managerAndBranchData.find(
-          (mb) => mb.fieldManagerId === loan.fieldManagerId
-        ) || {};
+    uniqueLoanInstances.forEach((loan) => {
+      const loanData = loan.toJSON();
+      const managerBranch = managerMap.get(loanData.fieldManagerId) || {};
 
       // Calculate loan cycle based on customerId
-      const customerId = loan.customerId; // Assuming customerId is available in the loan record
+      const customerId = loanData.customerId;
       if (!loanCycleMap[customerId]) {
-        loanCycleMap[customerId] = 1; // Start the loan cycle at 1
+        loanCycleMap[customerId] = 1;
       } else {
-        loanCycleMap[customerId] += 1; // Increment the loan cycle
+        loanCycleMap[customerId] += 1;
       }
 
-      // Get the loan data in a plain object
-      const loanData = loan.toJSON();
+      // Get EMI chart data for this loan - parse ONCE
+      const emiChartsArr = loanData.fk_member_details_hasMany_emi_charts_memberId || [];
+      const submittedChart = emiChartsArr.find(chart => chart.status === 'submitted') || emiChartsArr[0];
+      let emiChartParsed = [];
+      if (submittedChart && submittedChart.emiChart) {
+        try {
+          emiChartParsed = typeof submittedChart.emiChart === 'string'
+            ? JSON.parse(submittedChart.emiChart)
+            : submittedChart.emiChart;
+        } catch (e) {
+          console.error('Error parsing emiChart:', e);
+        }
+      }
 
-      // Get EMI chart data for this loan (specifically 'submitted' status)
-      const emiCharts = loanData.fk_member_details_hasMany_emi_charts_memberId || [];
-      const submittedChart = emiCharts.find(chart => chart.status === 'submitted') || emiCharts[0];
-      const emiChartData = submittedChart ? submittedChart.emiChart : null;
+      // Extract receipts details
+      const receiptsDetails = loanData.receiptsDetails || [];
+
+      // Remove large nested arrays from loanData object before spreading
+      // BUT keep receiptsDetails if it's explicitly needed by some reports
+      delete loanData.fk_member_details_hasMany_emi_charts_memberId;
 
       // If there are receipts, map each receipt to include the loan data
-      if (loanData.receiptsDetails && loanData.receiptsDetails.length > 0) {
-        loanData.receiptsDetails.forEach((receipt) => {
-          // Get principal and interest amounts for this specific EMI date
+      if (receiptsDetails.length > 0) {
+        receiptsDetails.forEach((receipt) => {
           const { principalAmount, interestAmount, emiMonth } = getEmiDetailsForDate(
-            emiChartData,
+            emiChartParsed,
             receipt.emiDate,
-            loanData.branchManagerStatusUpdatedAt // Pass disbursement date for fallback calculation
+            loanData.branchManagerStatusUpdatedAt
           );
 
           combinedData.push({
-            ...loanData, // Include all loan data
+            ...loanData,
             receiptEmiDate: receipt.emiDate,
             receiptEmiAmount: receipt.emiAmount,
             receivedAmount: receipt.receivedAmount,
             receiptDescription: receipt.description,
             collectedDate: receipt.collectedDate,
-            collectionApproval:
-              receipt.fk_receipts_hasOne_bl_collection_approval_receiptId ||
-              null,
-            // Add principal and interest amounts from EMI chart
+            collectionApproval: receipt.fk_receipts_hasOne_bl_collection_approval_receiptId || null,
             principalAmount: principalAmount,
             interestAmount: interestAmount,
             emiMonth: emiMonth,
@@ -320,7 +317,7 @@ module.exports = getCollectionReportData = async (req, res) => {
 
     res.status(200).json(combinedData);
   } catch (error) {
-    console.error(error); // Log the error for debugging purposes
+    console.error(error);
     res.status(500).json({
       error: "Internal Server Error",
       details: error.message,

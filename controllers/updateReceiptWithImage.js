@@ -16,10 +16,10 @@ const updateReceiptWithImage = async (req, res) => {
         cb(
           null,
           Date.now() +
-            "-" +
-            Math.round(Math.random() * 1e9) +
-            "-" +
-            file.originalname
+          "-" +
+          Math.round(Math.random() * 1e9) +
+          "-" +
+          file.originalname
         );
       },
     });
@@ -79,10 +79,10 @@ const updateReceiptWithImage = async (req, res) => {
         for (const field in fileData) {
           const existingFilePath = existingRecord[field]
             ? path.join(
-                __dirname,
-                "../uploads/documents/",
-                existingRecord[field]
-              )
+              __dirname,
+              "../uploads/documents/",
+              existingRecord[field]
+            )
             : null;
 
           if (existingFilePath && fs.existsSync(existingFilePath)) {

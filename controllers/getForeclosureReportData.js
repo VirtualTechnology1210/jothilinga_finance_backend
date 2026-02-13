@@ -29,7 +29,7 @@ module.exports = getForeclosureReportData = async (req, res) => {
         branchManagerStatus: "disbursed",
         fieldManagerId: {
           [Op.in]: fieldManagerIds, // Filter by IDs
-        },
+        },   
       },
       include: [
         {
