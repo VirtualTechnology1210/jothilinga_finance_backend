@@ -259,35 +259,75 @@ module.exports = getCollectionReportData = async (req, res) => {
       // BUT keep receiptsDetails if it's explicitly needed by some reports
       delete loanData.fk_member_details_hasMany_emi_charts_memberId;
 
-      // If there are receipts, map each receipt to include the loan data
+      // If there are receipts, group by emiDate and calculate actual interest/principal
+      // This uses the SAME logic as Dashboard (getDashboardCount.js) to avoid mismatches
       if (receiptsDetails.length > 0) {
+        // Step 1: Group receipts by emiDate
+        const receiptsByEmiDate = {};
         receiptsDetails.forEach((receipt) => {
-          const { principalAmount, interestAmount, emiMonth } = getEmiDetailsForDate(
-            emiChartParsed,
-            receipt.emiDate,
-            loanData.branchManagerStatusUpdatedAt
+          const emiDate = receipt.emiDate || 'unknown';
+          if (!receiptsByEmiDate[emiDate]) receiptsByEmiDate[emiDate] = [];
+          receiptsByEmiDate[emiDate].push(receipt);
+        });
+
+        // Step 2: For each emiDate group, calculate actual interest/principal split
+        Object.entries(receiptsByEmiDate).forEach(([emiDate, emiDateReceipts]) => {
+          const { principalAmount: chartPrincipal, interestAmount: chartInterest, emiMonth } =
+            getEmiDetailsForDate(emiChartParsed, emiDate, loanData.branchManagerStatusUpdatedAt);
+
+          // Sum all receipts for this emiDate (handles split payments!)
+          const totalReceivedForDate = Math.round(
+            emiDateReceipts.reduce((sum, r) => sum + (r.receivedAmount || 0), 0)
           );
 
-          combinedData.push({
-            ...loanData,
-            receiptEmiDate: receipt.emiDate,
-            receiptEmiAmount: receipt.emiAmount,
-            receivedAmount: receipt.receivedAmount,
-            receiptDescription: receipt.description,
-            collectedDate: receipt.collectedDate,
-            collectionApproval: receipt.fk_receipts_hasOne_bl_collection_approval_receiptId || null,
-            principalAmount: principalAmount,
-            interestAmount: interestAmount,
-            emiMonth: emiMonth,
-            branchName: managerBranch.branchName || null,
-            branchCode: managerBranch.branchCode || null,
-            divisionName: managerBranch.divisionName || null,
-            divisionCode: managerBranch.divisionCode || null,
-            regionName: managerBranch.regionName || null,
-            regionCode: managerBranch.regionCode || null,
-            username: managerBranch.username || null,
-            employeeName: managerBranch.employeeName || null,
-            loanCycle: loanCycleMap[customerId],
+          // Calculate actual interest/principal paid (same logic as Dashboard)
+          let actualInterestPaid = 0;
+          let actualPrincipalPaid = 0;
+          const interestComponent = Math.round(parseFloat(chartInterest || 0));
+          const principalComponent = Math.round(parseFloat(chartPrincipal || 0));
+
+          if (totalReceivedForDate > 0 && interestComponent > 0) {
+            if (totalReceivedForDate >= interestComponent) {
+              // Full interest covered
+              actualInterestPaid = interestComponent;
+              const remaining = totalReceivedForDate - interestComponent;
+              // Remaining goes to principal (capped by chart's principal amount)
+              actualPrincipalPaid = Math.min(principalComponent, remaining);
+            } else {
+              // Partial payment - all goes to interest
+              actualInterestPaid = totalReceivedForDate;
+              actualPrincipalPaid = 0;
+            }
+          }
+
+          // Step 3: Distribute proportionally to each receipt
+          emiDateReceipts.forEach((receipt) => {
+            const proportion = totalReceivedForDate > 0
+              ? receipt.receivedAmount / totalReceivedForDate
+              : 0;
+
+            combinedData.push({
+              ...loanData,
+              receiptEmiDate: receipt.emiDate,
+              receiptEmiAmount: receipt.emiAmount,
+              receivedAmount: receipt.receivedAmount,
+              receiptDescription: receipt.description,
+              collectedDate: receipt.collectedDate,
+              collectionApproval: receipt.fk_receipts_hasOne_bl_collection_approval_receiptId || null,
+              // Proportional interest/principal for this specific receipt
+              principalAmount: Math.round(actualPrincipalPaid * proportion),
+              interestAmount: Math.round(actualInterestPaid * proportion),
+              emiMonth: emiMonth,
+              branchName: managerBranch.branchName || null,
+              branchCode: managerBranch.branchCode || null,
+              divisionName: managerBranch.divisionName || null,
+              divisionCode: managerBranch.divisionCode || null,
+              regionName: managerBranch.regionName || null,
+              regionCode: managerBranch.regionCode || null,
+              username: managerBranch.username || null,
+              employeeName: managerBranch.employeeName || null,
+              loanCycle: loanCycleMap[customerId],
+            });
           });
         });
       } else {

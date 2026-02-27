@@ -5,6 +5,7 @@ const {
   proposed_loan_details,
   receipts,
   center,
+  emi_charts,
   sequelize,
 } = require("../models");
 const { Op } = require("sequelize");
@@ -425,10 +426,18 @@ module.exports = getDashboardCount = async (req, res) => {
         {
           model: receipts,
           as: "receiptsDetails",
+          where: {
+            status: { [Op.in]: ["paid", "Paid", "pending", "Pending"] },
+          },
+          required: false, // Left join - include members even if no receipts
         },
         {
           model: center,
           as: "fk_member_details_belongsTo_center_centerId",
+        },
+        {
+          model: emi_charts,
+          as: "fk_member_details_hasMany_emi_charts_memberId",
         },
       ],
     });
@@ -445,31 +454,29 @@ module.exports = getDashboardCount = async (req, res) => {
     let jlgTotalEmiPaid = 0;
 
     members.forEach((member) => {
-      let firstEmiDate, lastEmiDate, emiDates;
-      if (member.loanType === "Business Loan") {
-        ({ firstEmiDate, lastEmiDate } = getFirstAndLastEmiDates(
-          member.branchManagerStatusUpdatedAt,
-          member.proposedLoanDetails.tenureInMonths,
-          member.emiDateByBranchManager
-        ));
+      // Get the EMI chart data for this member
+      const emiChartRecords = member.fk_member_details_hasMany_emi_charts_memberId || [];
+      let emiChartEntries = [];
 
-        // Get all EMI dates from firstEmiDate to lastEmiDate
-        emiDates = getEmiDatesInRange(
-          member.emiDateByBranchManager,
-          firstEmiDate,
-          lastEmiDate
-        );
-      } else if (member.loanType === "JLG Loan") {
-        ({ firstEmiDate, lastEmiDate } = getJlgFirstAndLastEmiDates(
-          member.branchManagerStatusUpdatedAt,
-          member.proposedLoanDetails.tenureInMonths,
-          member.fk_member_details_belongsTo_center_centerId.bmMeetingDayOrder
-        ));
-        emiDates = getJlgEmiDatesInRange(
-          member.fk_member_details_belongsTo_center_centerId.bmMeetingDayOrder,
-          firstEmiDate,
-          lastEmiDate
-        );
+      // Parse the emiChart JSON from the latest emi_charts record
+      if (emiChartRecords.length > 0) {
+        // Use the submitted chart first, fall back to last record
+        // This matches the Collection Report's logic to avoid discrepancies
+        const selectedChart = emiChartRecords.find(c => c.status === 'submitted')
+          || emiChartRecords[emiChartRecords.length - 1];
+        try {
+          emiChartEntries = typeof selectedChart.emiChart === 'string'
+            ? JSON.parse(selectedChart.emiChart)
+            : selectedChart.emiChart;
+        } catch (e) {
+          console.error(`Error parsing emiChart for member ${member.id}:`, e.message);
+          emiChartEntries = [];
+        }
+      }
+
+      if (!Array.isArray(emiChartEntries) || emiChartEntries.length === 0) {
+        // No EMI chart data, skip this member
+        return;
       }
 
       let blOutstandingPrincipal = Math.round(
@@ -487,10 +494,13 @@ module.exports = getDashboardCount = async (req, res) => {
       let blEmiPaid = 0;
       let jlgEmiPaid = 0;
 
-      emiDates.forEach((emiDate) => {
-        const formattedEmiDate = `${emiDate.getFullYear()}-${String(
-          emiDate.getMonth() + 1
-        ).padStart(2, "0")}-${String(emiDate.getDate()).padStart(2, "0")}`;
+      // Iterate through each EMI chart entry
+      emiChartEntries.forEach((chartEntry) => {
+        // Parse the emiDate from the chart entry (format: "Mon Aug 04 2025")
+        const chartEmiDate = new Date(chartEntry.emiDate);
+        const formattedEmiDate = `${chartEmiDate.getFullYear()}-${String(
+          chartEmiDate.getMonth() + 1
+        ).padStart(2, "0")}-${String(chartEmiDate.getDate()).padStart(2, "0")}`;
 
         // Filter receipts for the current EMI date
         const receiptsForEmiDate = member.receiptsDetails.filter(
@@ -504,39 +514,34 @@ module.exports = getDashboardCount = async (req, res) => {
             0
           )
         );
+
+        // No receipts for this EMI date, skip
+        if (receivedAmount === 0) {
+          return;
+        }
+
         if (member.loanType === "Business Loan") {
           blEmiPaid += receivedAmount;
         } else {
           jlgEmiPaid += receivedAmount;
         }
 
-        // Calculate interest component for this EMI date
-        const interestComponent = Math.round(
-          ((member.loanType === "Business Loan"
-            ? blOutstandingPrincipal
-            : jlgOutstandingPrincipal) *
-            member.proposedLoanDetails.rateOfInterest) /
-            12 /
-            100
-        );
+        // Get interest and principal amounts from the EMI chart entry
+        const interestComponent = Math.round(parseFloat(chartEntry.interestAmount || 0));
+        const principalComponent = Math.round(parseFloat(chartEntry.principalAmount || 0));
 
         if (receivedAmount >= interestComponent) {
+          // Full interest was covered by the payment
           if (member.loanType === "Business Loan") {
             blInterestPaid += interestComponent;
-            jlgOutstandingInterest += interestComponent;
           } else {
             jlgInterestPaid += interestComponent;
-            jlgOutstandingInterest += interestComponent;
           }
 
           receivedAmount -= interestComponent;
 
-          const principalReduction = Math.min(
-            member.loanType === "Business Loan"
-              ? blOutstandingPrincipal
-              : jlgOutstandingPrincipal,
-            receivedAmount
-          );
+          // Remaining goes towards principal (capped by chart's principal amount)
+          const principalReduction = Math.min(principalComponent, receivedAmount);
           if (member.loanType === "Business Loan") {
             blPrincipalPaid += principalReduction;
             blOutstandingPrincipal -= principalReduction;
@@ -545,16 +550,13 @@ module.exports = getDashboardCount = async (req, res) => {
             jlgOutstandingPrincipal -= principalReduction;
           }
         } else {
+          // Partial payment - all goes to interest
           if (member.loanType === "Business Loan") {
             blInterestPaid += receivedAmount;
-            blOutstandingInterest += Math.round(
-              interestComponent - receivedAmount
-            );
+            blOutstandingInterest += Math.round(interestComponent - receivedAmount);
           } else {
             jlgInterestPaid += receivedAmount;
-            jlgOutstandingInterest += Math.round(
-              interestComponent - receivedAmount
-            );
+            jlgOutstandingInterest += Math.round(interestComponent - receivedAmount);
           }
         }
       });
