@@ -21,8 +21,10 @@ module.exports = getDemandVsCollectionReportData = async (req, res) => {
       return res.status(400).json({ error: "Both fromDate and toDate are required" });
     }
 
-    const startDate = new Date(fromDate);
-    const endDate = new Date(toDate);
+    // Use IST timezone (UTC+5:30) for date boundaries
+    // These dates are used to filter receipts by collectedDate (timestamp field)
+    const startDate = new Date(`${fromDate}T00:00:00.000+05:30`);
+    const endDate = new Date(`${toDate}T23:59:59.999+05:30`);
 
     // Validate date range
     if (startDate > endDate) {

@@ -228,87 +228,59 @@ module.exports = getDashboardCount = async (req, res) => {
       fieldManagerIds = fieldManagerRecords.map((record) => record.id);
     }
 
-    const userCount = await manager_credentials.count();
+    // Run all independent database queries in parallel for maximum speed
+    const [
+      userCount,
+      blPendingMemberCount,
+      jlgPendingMemberCount,
+      blApprovedMemberCount,
+      jlgApprovedMemberCount,
+      blRejectedMemberCount,
+      jlgRejectedMemberCount,
+      blDisbursedLoanAmount,
+      jlgDisbursedLoanAmount,
+      blDisbursedLoanCount,
+      jlgDisbursedLoanCount,
+      blSecurityDepositAmount,
+      jlgSecurityDepositAmount,
+      blInsuranceChargeAmount,
+      blProcessingChargeAmount,
+      jlgProcessingChargeAmount,
+      members,
+    ] = await Promise.all([
+      manager_credentials.count(),
 
-    const blPendingMemberCount = await member_details.count({
-      where: {
-        loanType: "Business Loan",
-        accountManagerStatus: "pending",
-        branchManagerStatus: { [Op.not]: "rejected" },
-        creditOfficerStatus: { [Op.not]: "rejected" },
-        misStatus: { [Op.not]: "rejected" },
-        creditManagerStatus: { [Op.not]: "rejected" },
-        sanctionCommitteeStatus: { [Op.not]: "rejected" },
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const jlgPendingMemberCount = await member_details.count({
-      where: {
-        loanType: "JLG Loan",
-        accountManagerStatus: "pending",
-        branchManagerStatus: { [Op.not]: "rejected" },
-        creditOfficerStatus: { [Op.not]: "rejected" },
-        misStatus: { [Op.not]: "rejected" },
-        creditManagerStatus: { [Op.not]: "rejected" },
-        sanctionCommitteeStatus: { [Op.not]: "rejected" },
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const blApprovedMemberCount = await member_details.count({
-      where: {
-        loanType: "Business Loan",
-        accountManagerStatus: "payment credited",
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const jlgApprovedMemberCount = await member_details.count({
-      where: {
-        loanType: "JLG Loan",
-        accountManagerStatus: "submitted",
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const blRejectedMemberCount = await member_details.count({
-      where: {
-        loanType: "Business Loan",
-        [Op.or]: [
-          { branchManagerStatus: "rejected" },
-          { creditOfficerStatus: "rejected" },
-          { misStatus: "rejected" },
-          { creditManagerStatus: "rejected" },
-          { sanctionCommitteeStatus: "rejected" },
-        ],
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const jlgRejectedMemberCount = await member_details.count({
-      where: {
-        loanType: "JLG Loan",
-        [Op.or]: [
-          { branchManagerStatus: "rejected" },
-          { creditOfficerStatus: "rejected" },
-          { misStatus: "rejected" },
-          { creditManagerStatus: "rejected" },
-          { sanctionCommitteeStatus: "rejected" },
-        ],
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const blDisbursedLoanAmount = await member_details.sum(
-      "sanctionedLoanAmountBySanctionCommittee",
-      {
+      member_details.count({
+        where: {
+          loanType: "Business Loan",
+          accountManagerStatus: "pending",
+          branchManagerStatus: { [Op.not]: "rejected" },
+          creditOfficerStatus: { [Op.not]: "rejected" },
+          misStatus: { [Op.not]: "rejected" },
+          creditManagerStatus: { [Op.not]: "rejected" },
+          sanctionCommitteeStatus: { [Op.not]: "rejected" },
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.count({
+        where: {
+          loanType: "JLG Loan",
+          accountManagerStatus: "pending",
+          branchManagerStatus: { [Op.not]: "rejected" },
+          creditOfficerStatus: { [Op.not]: "rejected" },
+          misStatus: { [Op.not]: "rejected" },
+          creditManagerStatus: { [Op.not]: "rejected" },
+          sanctionCommitteeStatus: { [Op.not]: "rejected" },
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.count({
         where: {
           loanType: "Business Loan",
           accountManagerStatus: "payment credited",
@@ -316,11 +288,9 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
-    const jlgDisbursedLoanAmount = await member_details.sum(
-      "sanctionedLoanAmountBySanctionCommittee",
-      {
+      }),
+
+      member_details.count({
         where: {
           loanType: "JLG Loan",
           accountManagerStatus: "submitted",
@@ -328,29 +298,41 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
-    const blDisbursedLoanCount = await member_details.count({
-      where: {
-        loanType: "Business Loan",
-        accountManagerStatus: "payment credited",
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const jlgDisbursedLoanCount = await member_details.count({
-      where: {
-        loanType: "JLG Loan",
-        accountManagerStatus: "submitted",
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-    });
-    const blSecurityDepositAmount = await member_details.sum(
-      "securityDeposit",
-      {
+      }),
+
+      member_details.count({
+        where: {
+          loanType: "Business Loan",
+          [Op.or]: [
+            { branchManagerStatus: "rejected" },
+            { creditOfficerStatus: "rejected" },
+            { misStatus: "rejected" },
+            { creditManagerStatus: "rejected" },
+            { sanctionCommitteeStatus: "rejected" },
+          ],
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.count({
+        where: {
+          loanType: "JLG Loan",
+          [Op.or]: [
+            { branchManagerStatus: "rejected" },
+            { creditOfficerStatus: "rejected" },
+            { misStatus: "rejected" },
+            { creditManagerStatus: "rejected" },
+            { sanctionCommitteeStatus: "rejected" },
+          ],
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.sum("sanctionedLoanAmountBySanctionCommittee", {
         where: {
           loanType: "Business Loan",
           accountManagerStatus: "payment credited",
@@ -358,11 +340,9 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
-    const jlgSecurityDepositAmount = await member_details.sum(
-      "securityDeposit",
-      {
+      }),
+
+      member_details.sum("sanctionedLoanAmountBySanctionCommittee", {
         where: {
           loanType: "JLG Loan",
           accountManagerStatus: "submitted",
@@ -370,12 +350,9 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
+      }),
 
-    const blInsuranceChargeAmount = await member_details.sum(
-      "insuranceAmount",
-      {
+      member_details.count({
         where: {
           loanType: "Business Loan",
           accountManagerStatus: "payment credited",
@@ -383,24 +360,9 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
+      }),
 
-    const blProcessingChargeAmount = await member_details.sum(
-      "processingCharge",
-      {
-        where: {
-          loanType: "Business Loan",
-          accountManagerStatus: "payment credited",
-          ...(applyFieldManagerFilter && {
-            fieldManagerId: { [Op.in]: fieldManagerIds },
-          }),
-        },
-      }
-    );
-    const jlgProcessingChargeAmount = await member_details.sum(
-      "processingCharge",
-      {
+      member_details.count({
         where: {
           loanType: "JLG Loan",
           accountManagerStatus: "submitted",
@@ -408,39 +370,89 @@ module.exports = getDashboardCount = async (req, res) => {
             fieldManagerId: { [Op.in]: fieldManagerIds },
           }),
         },
-      }
-    );
+      }),
 
-    const members = await member_details.findAll({
-      where: {
-        branchManagerStatus: "disbursed",
-        ...(applyFieldManagerFilter && {
-          fieldManagerId: { [Op.in]: fieldManagerIds },
-        }),
-      },
-      include: [
-        {
-          model: proposed_loan_details,
-          as: "proposedLoanDetails",
+      member_details.sum("securityDeposit", {
+        where: {
+          loanType: "Business Loan",
+          accountManagerStatus: "payment credited",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
         },
-        {
-          model: receipts,
-          as: "receiptsDetails",
-          where: {
-            status: { [Op.in]: ["paid", "Paid", "pending", "Pending"] },
+      }),
+
+      member_details.sum("securityDeposit", {
+        where: {
+          loanType: "JLG Loan",
+          accountManagerStatus: "submitted",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.sum("insuranceAmount", {
+        where: {
+          loanType: "Business Loan",
+          accountManagerStatus: "payment credited",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.sum("processingCharge", {
+        where: {
+          loanType: "Business Loan",
+          accountManagerStatus: "payment credited",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.sum("processingCharge", {
+        where: {
+          loanType: "JLG Loan",
+          accountManagerStatus: "submitted",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+      }),
+
+      member_details.findAll({
+        where: {
+          branchManagerStatus: "disbursed",
+          ...(applyFieldManagerFilter && {
+            fieldManagerId: { [Op.in]: fieldManagerIds },
+          }),
+        },
+        include: [
+          {
+            model: proposed_loan_details,
+            as: "proposedLoanDetails",
           },
-          required: false, // Left join - include members even if no receipts
-        },
-        {
-          model: center,
-          as: "fk_member_details_belongsTo_center_centerId",
-        },
-        {
-          model: emi_charts,
-          as: "fk_member_details_hasMany_emi_charts_memberId",
-        },
-      ],
-    });
+          {
+            model: receipts,
+            as: "receiptsDetails",
+            where: {
+              status: { [Op.in]: ["paid", "Paid", "pending", "Pending"] },
+            },
+            required: false, // Left join - include members even if no receipts
+          },
+          {
+            model: center,
+            as: "fk_member_details_belongsTo_center_centerId",
+          },
+          {
+            model: emi_charts,
+            as: "fk_member_details_hasMany_emi_charts_memberId",
+          },
+        ],
+      }),
+    ]);
 
     let blTotalOutstandingPrincipal = 0;
     let jlgTotalOutstandingPrincipal = 0;

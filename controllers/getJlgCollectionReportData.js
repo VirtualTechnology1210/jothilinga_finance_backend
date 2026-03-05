@@ -26,10 +26,11 @@ module.exports = getJlgCollectionReportData = async (req, res) => {
     // Construct receipt where clause if dates are provided
     const receiptWhere = {};
     if (fromDate && toDate) {
-      const fromDateStart = new Date(fromDate);
-      fromDateStart.setHours(0, 0, 0, 0);
-      const toDateEnd = new Date(toDate);
-      toDateEnd.setHours(23, 59, 59, 999);
+      // Use IST timezone (UTC+5:30) for date boundaries
+      // Midnight IST = previous day 18:30:00 UTC
+      // 23:59:59.999 IST = current day 18:29:59.999 UTC
+      const fromDateStart = new Date(`${fromDate}T00:00:00.000+05:30`);
+      const toDateEnd = new Date(`${toDate}T23:59:59.999+05:30`);
 
       receiptWhere.collectedDate = {
         [Op.between]: [fromDateStart, toDateEnd],

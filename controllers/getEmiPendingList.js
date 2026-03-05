@@ -336,8 +336,9 @@ const getEmiDatesFromChart = (emiChart, formattedFromDate, formattedToDate) => {
     return [];
   }
 
-  const fromDate = new Date(formattedFromDate);
-  const toDate = new Date(formattedToDate);
+  // Use IST timezone (UTC+5:30) for date boundaries
+  const fromDate = new Date(`${formattedFromDate}T00:00:00.000+05:30`);
+  const toDate = new Date(`${formattedToDate}T23:59:59.999+05:30`);
   const validEmiDates = [];
 
   console.log(`Filtering EMI dates between ${formattedFromDate} and ${formattedToDate}`);
@@ -458,10 +459,7 @@ module.exports = getEmiPendingList = async (req, res) => {
         {
           model: emi_charts,
           as: "fk_member_details_hasMany_emi_charts_memberId",
-          // Only fetch submitted EMI charts
-          where: {
-            status: 'submitted'
-          },
+          // Fetch all EMI charts (we'll pick the last created one per member)
           required: false, // Left join to include members even if no EMI chart exists
         },
       ],
@@ -475,16 +473,15 @@ module.exports = getEmiPendingList = async (req, res) => {
     for (const member of data) {
       console.log(`\n=== Processing member ${member.id} - ApplicationId: ${member.ApplicationId} ===`);
 
-      // Get EMI chart for this member (only submitted status)
-      const emiChartRecord = member.fk_member_details_hasMany_emi_charts_memberId && member.fk_member_details_hasMany_emi_charts_memberId.length > 0
-        ? member.fk_member_details_hasMany_emi_charts_memberId.find(chart =>
-          chart.status === 'submitted'
-        )
+      // Get the last created EMI chart for this member (handles duplicates)
+      const emiCharts = member.fk_member_details_hasMany_emi_charts_memberId || [];
+      const emiChartRecord = emiCharts.length > 0
+        ? emiCharts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
         : null;
 
       if (!emiChartRecord) {
-        console.log(`No submitted EMI chart found for member ${member.id}`);
-        continue; // Skip this member if no submitted EMI chart exists
+        console.log(`No EMI chart found for member ${member.id}`);
+        continue; // Skip this member if no EMI chart exists
       }
 
       let emiChart;
