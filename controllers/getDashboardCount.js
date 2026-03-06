@@ -423,6 +423,11 @@ module.exports = getDashboardCount = async (req, res) => {
       }),
 
       member_details.findAll({
+        attributes: [
+          "id",
+          "loanType",
+          "sanctionedLoanAmountBySanctionCommittee",
+        ],
         where: {
           branchManagerStatus: "disbursed",
           ...(applyFieldManagerFilter && {
@@ -431,24 +436,18 @@ module.exports = getDashboardCount = async (req, res) => {
         },
         include: [
           {
-            model: proposed_loan_details,
-            as: "proposedLoanDetails",
-          },
-          {
             model: receipts,
             as: "receiptsDetails",
+            attributes: ["emiDate", "receivedAmount"],
             where: {
               status: { [Op.in]: ["paid", "Paid", "pending", "Pending"] },
             },
             required: false, // Left join - include members even if no receipts
           },
           {
-            model: center,
-            as: "fk_member_details_belongsTo_center_centerId",
-          },
-          {
             model: emi_charts,
             as: "fk_member_details_hasMany_emi_charts_memberId",
+            attributes: ["emiChart", "status"],
           },
         ],
       }),
@@ -506,6 +505,11 @@ module.exports = getDashboardCount = async (req, res) => {
       let blEmiPaid = 0;
       let jlgEmiPaid = 0;
 
+      const receiptsByDate = (member.receiptsDetails || []).reduce((acc, receipt) => {
+        acc[receipt.emiDate] = (acc[receipt.emiDate] || 0) + (receipt.receivedAmount || 0);
+        return acc;
+      }, {});
+
       // Iterate through each EMI chart entry
       emiChartEntries.forEach((chartEntry) => {
         // Parse the emiDate from the chart entry (format: "Mon Aug 04 2025")
@@ -514,18 +518,8 @@ module.exports = getDashboardCount = async (req, res) => {
           chartEmiDate.getMonth() + 1
         ).padStart(2, "0")}-${String(chartEmiDate.getDate()).padStart(2, "0")}`;
 
-        // Filter receipts for the current EMI date
-        const receiptsForEmiDate = member.receiptsDetails.filter(
-          (receipt) => receipt.emiDate === formattedEmiDate
-        );
-
         // Calculate total received amount for this EMI date
-        let receivedAmount = Math.round(
-          receiptsForEmiDate.reduce(
-            (sum, receipt) => sum + receipt.receivedAmount,
-            0
-          )
-        );
+        let receivedAmount = Math.round(receiptsByDate[formattedEmiDate] || 0);
 
         // No receipts for this EMI date, skip
         if (receivedAmount === 0) {

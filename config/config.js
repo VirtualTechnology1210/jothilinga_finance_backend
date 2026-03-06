@@ -5,7 +5,7 @@ require("dotenv").config({ path: path.resolve(__dirname, "..", envFile) });
 
 const commonConfig = {
   username: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
+  password: process.env.DB_PASSWORD || "Deepan@123",
   database: process.env.DB_NAME || "jothilinga_finance",
   host: process.env.DB_HOST|| "localhost",
   dialect: process.env.DB_DIALECT || "mysql",
